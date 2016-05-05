@@ -63,30 +63,6 @@ value monda_to_gdb_target_read_memory (value core_addr, value buf, value len)
   CAMLreturn (Val_int (result));
 }
 
-value monda_to_gdb_copy_int32 (value buf)
-{
-  CAMLparam1(buf);
-  CAMLlocal1(ret);
-  ret = caml_copy_int32 (*(int32*)String_val (buf));
-  CAMLreturn(ret);
-}
-
-value monda_to_gdb_copy_int64 (value buf)
-{
-  CAMLparam1(buf);
-  CAMLlocal1(ret);
-  ret = caml_copy_int64 (*(int64*)String_val (buf));
-  CAMLreturn(ret);
-}
-
-value monda_to_gdb_copy_double (value buf)
-{
-  CAMLparam1(buf);
-  CAMLlocal1(ret);
-  ret = caml_copy_double (*(double*)String_val (buf));
-  CAMLreturn(ret);
-}
-
 value monda_to_gdb_print_filtered (value stream, value buf)
 {
   CAMLparam2(stream, buf);
@@ -166,4 +142,3 @@ value monda_to_gdb_symtab_filename (value v_symtab)
   struct symtab* symtab = Ptr_val (v_symtab);
   CAMLreturn (caml_copy_string (symtab->filename));
 }
-

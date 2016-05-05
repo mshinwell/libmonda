@@ -31,6 +31,7 @@
     particular debugger being used and those that do not. *)
 
 type obj
+type target_addr
 
 module type S = sig
 
@@ -38,18 +39,69 @@ module type S = sig
   module Obj : sig
     type t = obj
 
+    (** Analogous to [Obj.is_block]. *)
+    val is_block : t -> bool
+
+    (** Analogous to [Obj.is_int]. *)
+    val is_int : t -> bool
+
+    (** Analogous to [Obj.tag]. *)
+    val tag : t -> int
+
+    (** Analogous to [Obj.size]. *)
+    val size : t -> int
+
+    (** Analogous to [Obj.field]. *)
+    val field : t -> int -> t
+
+    (** Read the NULL-terminated string pointed to by the given field. *)
+    val c_string_field : t -> int -> string
+
+    (** Read the unboxed float value in the given field. *)
+    val double_field : t -> int -> double
+
+    (** Assuming that [t] is an integer, return which integer it is. *)
+    val int : t -> int
+
+    (** Assuming that [t] has the layout of a value with tag [String_tag],
+        return which string it holds. *)
+    val string : t -> string
+  end
+
+  module Target_memory : sig
     exception Read_error
 
-    val tag : t -> int
-    val size : t -> int
-    val field : t -> int -> t
-    val is_block : t -> bool
+    (** Read a portion of the target's memory into a buffer. *)
+    val read_exn : target_addr -> Bytes.t -> Int64.t -> unit
+
+    (** Read the value in the target's memory at the address given by the
+        [target_addr] plus the [offset_in_words]. *)
+    val read_value_exn : ?offset_in_words:int -> target_addr -> Obj.t
+
+    (** Read the [Int32.t] in the target's memory at the given address. *)
+    val read_int32_exn : target_addr -> Int32.t
+
+    (** Read the [Int64.t] in the target's memory at the given address. *)
+    val read_int64_exn : target_addr -> Int64.t
+
+    (** Read the float in the target's memory at the given address. *)
+    val read_float_exn : target_addr -> float
+
+    (** Read the unboxed float in the target's memory at the given field
+        of the given float array value. *)
+    val read_float_field_exn : target_addr -> int -> float
   end
 
-  (* Access to the memory of the program being debugged. *)
-  module Target : sig
-    val read_field : Obj.t -> int -> Obj.t
-  end
+  (** Given a target address, attempt to determine which filename and line
+      number it belongs to. *)
+  val filename_and_line_number_of_pc
+     : target_addr
+    -> use_previous_line_number_if_on_boundary:bool
+    -> (string * int) option
+
+  (** The maximum number of elements of a container such as an array to
+      print. *)
+  val max_array_elements_etc_to_print : unit -> int
 
 (*
   (* Display of text to the user of the debugger. *)

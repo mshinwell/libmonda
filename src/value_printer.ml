@@ -162,7 +162,7 @@ and generic_printer t ?(separator = ",") ?prefix ~guess_if_it's_a_list
     | Some p -> Format.fprintf formatter "@[%s " p
     end;
     let original_size = D.Obj.size value in
-    let max_size = D.max_array_etc_elements () in
+    let max_size = D.max_array_etc_elements_to_print () in
     let size, truncated =
       if original_size > max_size then max_size, true
       else original_size, false
