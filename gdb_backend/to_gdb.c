@@ -31,7 +31,7 @@
 #include <caml/alloc.h>
 #include <caml/mlvalues.h>
 
-#include <gdb/symtab.h>
+#include "symtab.h"
 
 static int
 compilation_directories_for_source_file_callback(struct symtab* symtab,

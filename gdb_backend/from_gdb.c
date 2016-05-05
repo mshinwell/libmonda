@@ -35,16 +35,13 @@
 #include <caml/callback.h>
 #include <caml/custom.h>
 #include <caml/fail.h>
-#include <caml/../asmrun/stack.h>
 
-#include "monda.h"
-#include "ml_utils.h"
-
-#include "../frame.h"
-#include "../infcall.h"
-#include "../stack.h"
-#include "../symtab.h"
-#include "../valprint.h"
+#include "defs.h"
+#include "frame.h"
+#include "infcall.h"
+#include "stack.h"
+#include "symtab.h"
+#include "valprint.h"
 
 #include <string.h>
 
