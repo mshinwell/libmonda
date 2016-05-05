@@ -27,48 +27,87 @@
 (*                                                                        *)
 (**************************************************************************)
 
-type obj = int64
-
-
-
-type addr = int64
-type gdb_stream
-
-module To_gdb = struct
-  external find_in_path : string -> string option
-    = "monda_gdb_find_in_path"
-
-  external target_read_memory : addr -> string -> int -> int 
-    = "monda_gdb_target_read_memory" "noalloc"
-
-  external gdb_print_filtered : gdb_stream -> string -> unit 
-    = "monda_gdb_print_filtered" "noalloc"
-
-  type symtab
-
-  type symtab_and_line = {
-    symtab : symtab;
-    line : int option;
-    addr_pc : addr;
-    addr_end : addr;
-  }
-
-  external gdb_function_linkage_name_at_pc
-    : addr -> string option
-    = "monda_gdb_function_linkage_name_at_pc"
-
-  external gdb_find_pc_line
-    : addr -> not_current:bool -> symtab_and_line option
-    = "monda_gdb_find_pc_line"
-
-  external gdb_symtab_filename
-    : symtab -> string
-    = "monda_gdb_symtab_filename"
-end
+type obj = Int64.t
+type target_addr = Int64.t
 
 external caml_copy_int32 : Obj.t -> Int32.t = "caml_copy_int32"
 external caml_copy_int64 : Obj.t -> Int64.t = "caml_copy_int64"
 external caml_copy_double : Obj.t -> float = "caml_copy_double"
+external caml_copy_string : int -> string = "caml_copy_string"
+
+module Gdb : sig
+  (** Bindings directly to gdb. *)
+
+  val target_read_memory
+     : addr:Nativeint.t
+    -> buf:Bytes.t
+    -> size:Nativeint.t
+    -> int
+
+  module Ui_file : sig
+    type t = private int
+
+    val print_filtered : t -> string -> unit
+  end
+
+  module Symtab : sig
+    type t = private int
+
+    val filename : t -> string
+  end
+
+  module Symtab_and_line : sig
+    type t = private int
+
+    val symtab : t -> Symtab.t
+    val line : t -> int
+  end
+
+  val find_pc_line
+     : addr:Nativeint.t
+    -> use_previous_line_number_if_on_boundary:bool
+    -> Symtab_and_line.t
+end = struct
+  external target_read_memory
+     : addr:(Nativeint.t [@unboxed])
+    -> buf:Bytes.t
+    -> size:(Nativeint.t [@unboxed])
+    -> (int [@untagged])
+    = "target_read_memory" "noalloc"
+
+  module Ui_file = struct
+    type t = int
+
+    external print_filtered : t -> format_str:string -> string -> unit
+      = "fprintf_filtered" "noalloc"
+
+    let print_filtered t text =
+      print_filtered t "%s" text
+  end
+
+  module Symtab = struct
+    type t = int
+
+    let filename t : string =
+      caml_copy_string (((Obj.magic t) : int array).(3))
+  end
+
+  module Symtab_and_line = struct
+    type t = int
+
+    let symtab t : Symtab.t =
+      ((Obj.magic t) : int array).(1)
+
+    let line t : int =
+      ((Obj.magic t) : int array).(3) * 2
+  end
+
+  external find_pc_line
+     : addr:(Nativeint.t [@unboxed])
+    -> use_previous_line_number_if_on_boundary:(bool [@unboxed])
+    -> Symtab_and_line.t
+    = "find_pc_line" "noalloc"
+end
 
 let copy_int32 (buf : string) =
   caml_copy_int32 (Obj.field (Obj.repr buf) 0)
@@ -94,7 +133,12 @@ module Target = struct
   let read_memory_exn addr buf len =
     if String.length buf < len
     then invalid_arg "read_memory_exn: len > String.length buf"
-    else To_gdb.target_read_memory_exn addr buf len
+    else begin
+      let result = Gdb.target_read_memory ~addr ~buf ~size in
+      if result <> 0 then begin
+        raise Read_error
+      end
+    end
 
   let priv_buf = Bytes.create 8
   
