@@ -27,21 +27,22 @@
 (*                                                                        *)
 (**************************************************************************)
 
-type obj = Int64.t
-type target_addr = Int64.t
+type obj = nativeint
+type target_addr = nativeint
+type stream = private int  (* only ever constructed by gdb itself *)
 
 external caml_copy_int32 : Obj.t -> Int32.t = "caml_copy_int32"
 external caml_copy_int64 : Obj.t -> Int64.t = "caml_copy_int64"
 external caml_copy_double : Obj.t -> float = "caml_copy_double"
-external caml_copy_string : int -> string = "caml_copy_string"
+external caml_copy_string : addr:int -> string = "caml_copy_string"
 
 module Gdb : sig
-  (** Bindings directly to gdb. *)
+  (* Bindings directly to gdb. *)
 
   val target_read_memory
-     : addr:Nativeint.t
+     : addr:target_addr
     -> buf:Bytes.t
-    -> size:Nativeint.t
+    -> size:target_addr
     -> int
 
   module Ui_file : sig
@@ -59,19 +60,25 @@ module Gdb : sig
   module Symtab_and_line : sig
     type t = private int
 
-    val symtab : t -> Symtab.t
-    val line : t -> int
+    val symtab : t -> Symtab.t option
+    val line : t -> int option
   end
 
   val find_pc_line
-     : addr:Nativeint.t
+     : addr:target_addr
     -> use_previous_line_number_if_on_boundary:bool
     -> Symtab_and_line.t
 end = struct
+  (* Type "int" is used to conceal naked pointers from the GC. *)
+
+  external int_as_pointer : int -> 'a = "%int_as_pointer"
+
+  let null : int = int_as_pointer 0
+
   external target_read_memory
-     : addr:(Nativeint.t [@unboxed])
+     : addr:(target_addr [@unboxed])
     -> buf:Bytes.t
-    -> size:(Nativeint.t [@unboxed])
+    -> size:(target_addr [@unboxed])
     -> (int [@untagged])
     = "target_read_memory" "noalloc"
 
@@ -89,24 +96,36 @@ end = struct
     type t = int
 
     let filename t : string =
-      caml_copy_string (((Obj.magic t) : int array).(3))
+      caml_copy_string ~addr:(((Obj.magic t) : int array).(3))
   end
 
   module Symtab_and_line = struct
     type t = int
 
-    let symtab t : Symtab.t =
-      ((Obj.magic t) : int array).(1)
+    let symtab t : Symtab.t option =
+      let symtab = ((Obj.magic t) : int array).(1) in
+      if symtab == null then None
+      else Some symtab
 
-    let line t : int =
-      ((Obj.magic t) : int array).(3) * 2
+    let line t : int option =
+      let line = ((Obj.magic t) : int array).(3) * 2 in
+      if line < 1 then None else Some line
   end
 
   external find_pc_line
-     : addr:(Nativeint.t [@unboxed])
+     : addr:(target_addr [@unboxed])
     -> use_previous_line_number_if_on_boundary:(bool [@unboxed])
     -> Symtab_and_line.t
     = "find_pc_line" "noalloc"
+end
+
+module Gdb_indirect = struct
+  (* Bindings to gdb via C stubs in to_gdb.c. *)
+
+  external compilation_directories_for_source_file
+     : source_filename:string
+    -> string list
+    = "monda_compilation_directories_for_source_file"
 end
 
 let copy_int32 (buf : string) =
@@ -118,16 +137,12 @@ let copy_int64 (buf : string) =
 let copy_double (buf : string) =
   caml_copy_double (Obj.field (Obj.repr buf) 0)
 
-let print = Priv.gdb_print_filtered
-let print_endline out = print out "\n"
-let printf stream = Printf.ksprintf (print stream)
-
 exception Read_error
 
 module Target = struct
   module Value = Int64
 
-  let wo_tag w  = Value.(to_int (logand w 255L))
+  let wo_tag w  = Value.(to_int (logand w 0xffn))
   let wo_size w = Value.(to_int (shift_right_logical w 10))
 
   let read_memory_exn addr buf len =
@@ -141,65 +156,52 @@ module Target = struct
     end
 
   let priv_buf = Bytes.create 8
-  
-  let read_int32 addr =
+ 
+  let read_int32_exn addr =
     read_memory_exn addr priv_buf 4;
-    Priv.copy_int32 priv_buf
+    copy_int32 priv_buf
 
-  let read_int64 addr =
+  let read_int64_exn addr =
     read_memory_exn addr priv_buf 8;
-    Priv.copy_int64 priv_buf
+    copy_int64 priv_buf
 
-  let read_value ?(offset_in_words = 0) addr =
+  let read_value_exn ?(offset_in_words = 0) addr =
     read_int64 Value.(add addr (of_int (Arch.size_addr * offset_in_words)))
 
-  let read_double addr =
+  let read_double_exn addr =
     read_memory_exn addr priv_buf 8;
-    Priv.copy_double priv_buf
+    copy_double priv_buf
 
-  let read_double_field addr offset =
+  let read_double_field_exn addr offset =
     read_double Value.(add addr (of_int (8 * offset)))
 end
 
 module Obj = struct
-  let Arch.size_addr_minus_one = Value.(of_int (Target.Arch.size_addr - 1))
+  let size_addr_minus_one = Value.(of_int (Arch.size_addr - 1))
 
   type t = addr
 
-  let is_int       x = Value.(logand x one = one)
+  let is_int x = Value.(logand x one = one)
   let is_unaligned x = Value.(logand x Arch.size_addr_minus_one <> zero)
-
-  let tag x = 
-    if is_int x then int_tag
-    else if is_unaligned x then unaligned_tag
-    else try Target.wo_tag (read_field x (-1))
-         with Read_error n -> out_of_heap_tag
-
   let is_block x = not (is_int x || is_unaligned x)
-
-  let size x = Target.wo_size (read_field x (-1))
   
-  let field t i = Target.read_field t i
-  let double_field t i = Target.read_double_field t i
+  let field t i =
+    Target.read_value t ~offset_in_words:i
 
-  let add_offset t i = Value.(add t (of_int32 i))
+  let tag_exn x = 
+    if is_int x then Obj.int_tag
+    else if is_unaligned x then Obj.unaligned_tag
+    else Target.wo_tag (read_field x (-1))
 
-  let int x = Value.(to_int (shift_right x 1))
+  let size_exn x = Target.wo_size (read_field x (-1))
 
-  let string x =
-    let size = size x * Target.Arch.size_addr in
-    let buf = Bytes.create size in
-    Target.read_memory_exn x buf size;
-    let size = size - 1 - int_of_char buf.[size - 1] in
-    String.sub buf 0 size
-
-  let c_string_field t i =
+  let c_string_field_exn t i =
     let ptr = ref (field t i) in
     let result = ref "" in
     let finished = ref false in
     while not !finished do
       let buf = Bytes.create 1 in
-      read_memory_exn !ptr buf 1;
+      Target.read_memory_exn !ptr buf 1;
       if String.get buf 0 = '\000' then
         finished := true
       else begin
@@ -208,12 +210,25 @@ module Obj = struct
       end
     done;
     !result
+
+  let double_field_exn t i = Target.read_double_field_exn t i
+
+  let int x = Value.(to_int (shift_right x 1))
+
+  let string x =
+    let size = size x * Arch.size_addr in
+    let buf = Bytes.create size in
+    Target.read_memory_exn x buf size;
+    let size = size - 1 - int_of_char buf.[size - 1] in
+    String.sub buf 0 size
 end
 
+let compilation_directories_for_source_file =
+  Gdb_indirect.compilation_directories_for_source_file
 
-let formatter ~stream =
-  Format.make_formatter
-    (fun str pos len -> Gdb.print stream (String.sub str pos len))
+let formatter stream =
+  Format.make_formatter (fun str pos len ->
+      Gdb.Ui_file.print_filtered stream (String.sub str pos len))
     (fun () -> ())
 
 let () =

@@ -139,42 +139,6 @@ monda_demangle (char* mangled, int options)
   CAMLreturnT (char*, res);
 }
 
-static int
-compilation_directories_for_source_file_callback(struct symtab* symtab,
-                                               void* directories_list_head)
-{
-  CAMLparam0();
-  CAMLlocal1(v_dirname);
-
-  if (symtab->dirname) {
-    value v_list_cell;
-
-    v_dirname = caml_copy_string(symtab->dirname);
-
-    v_list_cell = caml_alloc_small(2, 0);
-    Field(v_list_cell, 0) = v_dirname;
-    Field(v_list_cell, 1) = *(value*) directories_list_head;
-
-    *(value*) directories_list_head = v_list_cell;
-  }
-
-  CAMLreturnT(int, 0);  /* always continue the search */
-}
-
-value
-gdb_ocaml_compilation_directories_for_source_file(value v_file)
-{
-  CAMLparam0();
-  CAMLlocal1(v_directories_list);
-
-  v_directories_list = Val_long(0);
-  iterate_over_symtabs(String_val(v_file),
-    &compilation_directories_for_source_file_callback,
-    &v_directories_list);  /* take the address since we may cause a GC */
-
-  CAMLreturn(v_directories_list);
-}
-
 /* These are initialized by way of [_initialize_ocaml_language]. */
 static int value_printer_max_depth;
 static char* search_path = NULL;

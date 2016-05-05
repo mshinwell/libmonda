@@ -28,37 +28,55 @@
 (**************************************************************************)
 
 (** Interface between the parts of the library that depend on the
-    particular debugger being used and those that do not. *)
+    particular debugger being used and those that do not.
 
+    There is no requirement for an implementation of this library to be
+    thread safe.
+*)
+
+(** Values that have been read from the program being debugged.
+    Analogous to [Obj.t] from the standard library. *)
 type obj
+
+(** An address on the target. *)
 type target_addr
 
-module type S = sig
+(** Used for printing on the debugger's terminal. *)
+type stream
 
-  (* Values that have been read from the program being debugged. *)
+module type S = sig
   module Obj : sig
     type t = obj
 
-    (** Analogous to [Obj.is_block]. *)
+    (** Raised when any of the [Obj] or [Target_memory] functions fail to read
+        memory. *)
+    exception Read_error
+
+    (** Analogous to [Obj.is_block]---except that [false] is also
+        returned if the input is misaligned. *)
     val is_block : t -> bool
 
     (** Analogous to [Obj.is_int]. *)
     val is_int : t -> bool
 
-    (** Analogous to [Obj.tag]. *)
-    val tag : t -> int
+    (** Analogous to [Obj.tag].  Reads from the target's memory.
+        Returns [Obj.unaligned_tag] if the input is misaligned.
+        Returns [Obj.int_tag] if the input satisfies [is_int]. *)
+    val tag_exn : t -> int
 
-    (** Analogous to [Obj.size]. *)
-    val size : t -> int
+    (** Analogous to [Obj.size].  Reads from the target's memory. *)
+    val size_exn : t -> int
 
-    (** Analogous to [Obj.field]. *)
-    val field : t -> int -> t
+    (** Analogous to [Obj.field].  Reads from the target's memory. *)
+    val field_exn : t -> int -> t
 
-    (** Read the NULL-terminated string pointed to by the given field. *)
-    val c_string_field : t -> int -> string
+    (** Read the NULL-terminated string pointed to by the given field
+        from the target's memory. *)
+    val c_string_field_exn : t -> int -> string
 
-    (** Read the unboxed float value in the given field. *)
-    val double_field : t -> int -> double
+    (** Read the unboxed float value in the given field from the target's
+        memory. *)
+    val double_field_exn : t -> int -> double
 
     (** Assuming that [t] is an integer, return which integer it is. *)
     val int : t -> int
@@ -69,7 +87,7 @@ module type S = sig
   end
 
   module Target_memory : sig
-    exception Read_error
+    type t = target_addr
 
     (** Read a portion of the target's memory into a buffer. *)
     val read_exn : target_addr -> Bytes.t -> Int64.t -> unit
@@ -103,27 +121,12 @@ module type S = sig
       print. *)
   val max_array_elements_etc_to_print : unit -> int
 
-(*
-  (* Display of text to the user of the debugger. *)
-  val print : string -> unit
-  module Stream : sig
-    type t
-    val to_formatter : t -> Format.formatter
-  end
+  (** The list of compilation directories referenced in the DWARF information
+      of the given source file. *)
+  val compilation_directories_for_source_file
+     : source_filename:string
+    -> string list
 
-  (* The linkage name of the function containing the program counter
-     value [pc]. *)
-  val linkage_name_at_pc : pc:Obj.t -> string
-
-  (* As much information as known about the filename and line number
-     of the source text that was compiled to program counter [pc]. *)
-  val filename_and_line_number_of_pc
-     : pc:Obj.t
-    -> (string * (int option)) option
-
-  (* User preferences set in the debugger. *)
-  val max_array_etc_elements : unit -> int
-  val max_depth : unit -> int
-  val cmt_search_path : unit -> string list
-*)
+  (** A formatter that prints to the debugger terminal for user feedback. *)
+  val formatter : stream -> Format.formatter
 end
