@@ -69,24 +69,6 @@ ocaml_val_print (value* callback, struct type *type, const gdb_byte *valaddr,
                  const struct value_print_options *options,
                  int depth)
 {
-  CAMLparam0();
-  CAMLlocal4(v_type, v_stream, v_target);
-  CAMLlocalN(args, 5);
-  struct frame_info* selected_frame;
-
-  gdb_assert(type != NULL && TYPE_NAME(type) != NULL);  /* enforced in ocaml-lang.c */
-  v_type = caml_copy_string(TYPE_NAME(type));
-
-  v_target = Val_target (*(CORE_ADDR*)valaddr);
-  v_stream = Val_ptr(stream);
-
-  Store_field(args, 0, v_target);
-  Store_field(args, 1, v_stream);
-  Store_field(args, 2, v_type);
-  Store_field(args, 3, Val_bool(options->summary));
-  (void) caml_callbackN (*callback, 4, args);
-
-  CAMLreturn0;
 }
 
 void
@@ -98,16 +80,27 @@ monda_val_print (struct type *type, struct symbol *symbol,
                              const struct value_print_options *options,
                              int depth)
 {
+  CAMLparam0();
+  CAMLlocal3(v_type, v_stream, v_target);
+  CAMLlocalN(args, 4);
+  struct frame_info* selected_frame;
   static value *callback = NULL;
 
   if (callback == NULL) {
     callback = caml_named_value ("monda_val_print");
   }
 
-  if (callback != NULL) {
-    ocaml_val_print (callback, type, symbol, valaddr, embedded_offset,
-                     address, stream, recurse, val, options, depth);
-  }
+  v_type = caml_copy_string(TYPE_NAME(type));
+  v_target = caml_copy_nativeint(*(intnat*) valaddr);
+
+  Store_field(args, 0, v_target);
+  Store_field(args, 1, v_stream);
+  Store_field(args, 2, v_type);
+  Store_field(args, 3, Val_bool(options->summary));
+
+  (void) caml_callback4(*callback, ..., 
+
+  CAMLreturn0;
 }
 
 char*

@@ -483,3 +483,18 @@ let print t ?depth ?print_sig ~type_of_ident ~summary out v =
   print_value ?depth ?print_sig ~type_of_ident ~summary ~formatter v;
   Format.fprintf formatter "@]";
   Format.pp_print_flush formatter ()
+
+let print_from_gdb addr stream ~dwarf_type ~call_site ~summary =
+  let type_of_ident =
+    match Name_laundry.split_base_type_die_name dwarf_type with
+    | None -> None
+    | Some { output_path; ident_name; } ->
+      let output_dir = Filename.dirname output_path in
+
+  in
+  let type_of_ident =
+    find_type_and_env ~symbol_linkage_name ~cmt_file ~call_site
+  in
+  print ~depth ~print_sig:true ~type_of_ident ~summary out v
+
+let () = Callback.register "monda_val_print" print_from_gdb

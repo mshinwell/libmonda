@@ -230,6 +230,3 @@ let formatter stream =
   Format.make_formatter (fun str pos len ->
       Gdb.Ui_file.print_filtered stream (String.sub str pos len))
     (fun () -> ())
-
-let () =
-  Callback.register "monda_val_print" M.print_value
