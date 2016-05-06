@@ -33,7 +33,7 @@ type target_addr = nativeint
 external caml_copy_int32 : Obj.t -> Int32.t = "caml_copy_int32"
 external caml_copy_int64 : Obj.t -> Int64.t = "caml_copy_int64"
 external caml_copy_nativeint : Obj.t -> Nativeint.t = "caml_copy_nativeint"
-external caml_copy_double : Obj.t -> float = "caml_copy_double"
+external caml_copy_float : Obj.t -> float = "caml_copy_float"
 external caml_copy_string : addr:int -> string = "caml_copy_string"
 
 type out_of_heap_buffer = private int
@@ -170,15 +170,15 @@ let copy_int64 (buf : string) =
 let copy_nativeint (buf : string) =
   caml_copy_nativeint (Obj.field (Obj.repr buf) 0)
 
-let copy_double (buf : string) =
-  caml_copy_double (Obj.field (Obj.repr buf) 0)
+let copy_float (buf : string) =
+  caml_copy_float (Obj.field (Obj.repr buf) 0)
 
 exception Read_error
 
-module Target = struct
-  let read_memory_exn addr buf len =
+module Target_memory = struct
+  let read_exn addr buf len =
     if String.length buf < len
-    then invalid_arg "read_memory_exn: len > String.length buf"
+    then invalid_arg "read_exn: len > String.length buf"
     else begin
       let size = Nativeint.of_int len in
       let result = Gdb.target_read_memory ~addr ~buf ~size in
@@ -191,11 +191,11 @@ module Target = struct
 
 (* 
   let read_int32_exn addr =
-    read_memory_exn addr priv_buf 4;
+    read_exn addr priv_buf 4;
     copy_int32 priv_buf
 
   let read_int64_exn addr =
-    read_memory_exn addr priv_buf 8;
+    read_exn addr priv_buf 8;
     copy_int64 priv_buf
 *)
 
@@ -203,23 +203,26 @@ module Target = struct
     let addr =
       Nativeint.(add addr (of_int (Arch.size_addr * offset_in_words)))
     in
-    read_memory_exn addr priv_buf Arch.size_addr;
+    read_exn addr priv_buf Arch.size_addr;
     copy_nativeint priv_buf
 
   let read_addr_exn = read_value_exn
 
-  let read_double_exn addr =
-    read_memory_exn addr priv_buf 8;
-    copy_double priv_buf
+  let read_float_exn addr =
+    read_exn addr priv_buf 8;
+    copy_float priv_buf
 
-  let read_double_field_exn addr offset =
-    read_double_exn Nativeint.(add addr (of_int (8 * offset)))
+  let read_float_field_exn addr offset =
+    read_float_exn Nativeint.(add addr (of_int (8 * offset)))
+
+  let print_addr ppf t =
+    Format.fprintf ppf "0x%nx" t
 end
 
 module Obj = struct
   let size_addr_minus_one = Nativeint.(of_int (Arch.size_addr - 1))
 
-  type t = target_addr
+  type t = obj
 
   let wo_tag w  = Nativeint.(to_int (logand w 0xffn))
   let wo_size w = Nativeint.(to_int (shift_right_logical w 10))
@@ -228,23 +231,25 @@ module Obj = struct
   let is_unaligned x = Nativeint.(logand x size_addr_minus_one <> zero)
   let is_block x = not (is_int x || is_unaligned x)
   
-  let field t i =
-    Target.read_value_exn t ~offset_in_words:i
+  let field_exn t i =
+    Target_memory.read_value_exn t ~offset_in_words:i
+
+  let field_as_addr_exn = field_exn
 
   let tag_exn x = 
     if is_int x then Obj.int_tag
     else if is_unaligned x then Obj.unaligned_tag
-    else wo_tag (field x (-1))
+    else wo_tag (field_exn x (-1))
 
-  let size_exn x = wo_size (field x (-1))
+  let size_exn x = wo_size (field_exn x (-1))
 
   let c_string_field_exn t i =
-    let ptr = ref (field t i) in
+    let ptr = ref (field_exn t i) in
     let result = ref "" in
     let finished = ref false in
     while not !finished do
       let buf = Bytes.create 1 in
-      Target.read_memory_exn !ptr buf 1;
+      Target_memory.read_exn !ptr buf 1;
       if String.get buf 0 = '\000' then
         finished := true
       else begin
@@ -254,16 +259,18 @@ module Obj = struct
     done;
     !result
 
-  let double_field_exn t i = Target.read_double_field_exn t i
+  let float_field_exn t i = Target_memory.read_float_field_exn t i
 
   let int x = Nativeint.(to_int (shift_right x 1))
 
   let string x =
     let size = size_exn x * Arch.size_addr in
     let buf = Bytes.create size in
-    Target.read_memory_exn x buf size;
+    Target_memory.read_exn x buf size;
     let size = size - 1 - int_of_char buf.[size - 1] in
     String.sub buf 0 size
+
+  let raw t = t
 end
 
 let symbol_at_pc pc =
@@ -292,7 +299,9 @@ let filename_and_line_number_of_pc addr
   in
   match Gdb.Symtab_and_line.symtab symtab_and_line with
   | None -> None
-  | Some symtab -> Some (Gdb.Symtab.filename symtab, Gdb.Symtab_and_line.line)
+  | Some symtab ->
+    Some (Gdb.Symtab.filename symtab,
+      Gdb.Symtab_and_line.line symtab_and_line)
 
 let compilation_directories_for_source_file =
   Gdb_indirect.compilation_directories_for_source_file

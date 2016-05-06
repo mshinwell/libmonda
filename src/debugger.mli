@@ -34,20 +34,18 @@
     thread safe.
 *)
 
-(** Values that have been read from the program being debugged.
-    Analogous to [Obj.t] from the standard library. *)
-type obj
-
-(** An address on the target. *)
-type target_addr
-
 module type S = sig
   (** Raised when any of the [Obj] or [Target_memory] functions fail to read
       memory. *)
   exception Read_error
 
+  (** An address on the target. *)
+  type target_addr
+
   module Obj : sig
-    type t = obj
+    (** OCaml values that have been read from the program being debugged.
+        Analogous to [Obj.t] from the standard library. *)
+    type t
 
     (** Analogous to [Obj.is_block]---except that [false] is also
         returned if the input is misaligned. *)
@@ -77,7 +75,7 @@ module type S = sig
 
     (** Read the unboxed float value in the given field from the target's
         memory. *)
-    val double_field_exn : t -> int -> float
+    val float_field_exn : t -> int -> float
 
     (** Assuming that [t] is an integer, return which integer it is. *)
     val int : t -> int
@@ -87,14 +85,12 @@ module type S = sig
     val string : t -> string
 
     (** Return the raw value. *)
-    val raw : t -> Int64.t
+    val raw : t -> Nativeint.t
   end
 
   module Target_memory : sig
-    type t = target_addr
-
     (** Read a portion of the target's memory into a buffer. *)
-    val read_exn : target_addr -> Bytes.t -> Int64.t -> unit
+    val read_exn : target_addr -> Bytes.t -> int -> unit
 
     (** Read the value in the target's memory at the address given by the
         [target_addr] plus the [offset_in_words]. *)
@@ -103,11 +99,13 @@ module type S = sig
     (** Like [read_value_exn], but returns a [target_addr]. *)
     val read_addr_exn : ?offset_in_words:int -> target_addr -> target_addr
 
+(*
     (** Read the [Int32.t] in the target's memory at the given address. *)
     val read_int32_exn : target_addr -> Int32.t
 
     (** Read the [Int64.t] in the target's memory at the given address. *)
     val read_int64_exn : target_addr -> Int64.t
+*)
 
     (** Read the float in the target's memory at the given address. *)
     val read_float_exn : target_addr -> float
@@ -117,7 +115,7 @@ module type S = sig
     val read_float_field_exn : target_addr -> int -> float
 
     (** Print an address in hex. *)
-    val print_addr : Format.formatter -> t -> unit
+    val print_addr : Format.formatter -> target_addr -> unit
   end
 
   val symbol_at_pc : target_addr -> string option
@@ -128,10 +126,6 @@ module type S = sig
      : target_addr
     -> use_previous_line_number_if_on_boundary:bool
     -> (string * (int option)) option
-
-  (** The maximum number of elements of a container such as an array to
-      print. *)
-  val max_array_elements_etc_to_print : unit -> int
 
   (** The list of compilation directories referenced in the DWARF information
       of the given source file. *)

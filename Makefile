@@ -36,20 +36,20 @@ GDB_ROOT=/home/mark/dev/mshinwell-gdb
 
 OCAML_ROOT=`ocamlopt -where`
 
-OCAMLOPT=ocamlopt -verbose -I +compiler-libs -I ./src \
-  -g -fPIC -ccopt -fPIC -ccopt -g \
-  -ccopt -I$(OCAML_ROOT) \
-  -ccopt -I$(GDB_ROOT)/gdb \
-  -ccopt -I$(GDB_ROOT)/gdb/common \
-  -ccopt -I$(GDB_ROOT)/gdb/config \
-  -ccopt -DHAVE_CONFIG_H \
-  -ccopt -I$(GDB_ROOT)/include \
-  -ccopt -I$(GDB_ROOT)/gdb/gnulib/import \
-  -ccopt -I$(GDB_ROOT)/gdb/build-gnulib/import
+OCAMLOPT=ocamlopt -verbose -I +compiler-libs -I ./src -g -fPIC \
+  -I ./gdb_backend
 
-GDB_BACKEND=gdb_backend/from_gdb.c \
-  gdb_backend/to_gdb.c \
-  gdb_backend/gdb_debugger.mli \
+CC=gcc -fPIC -g \
+  -I$(OCAML_ROOT) \
+  -I$(GDB_ROOT)/gdb \
+  -I$(GDB_ROOT)/gdb/common \
+  -I$(GDB_ROOT)/gdb/config \
+  -DHAVE_CONFIG_H \
+  -I$(GDB_ROOT)/include \
+  -I$(GDB_ROOT)/gdb/gnulib/import \
+  -I$(GDB_ROOT)/gdb/build-gnulib/import
+
+GDB_BACKEND=gdb_backend/gdb_debugger.mli \
   gdb_backend/gdb_debugger.ml \
   gdb_backend/from_gdb_ocaml.ml
 
@@ -71,9 +71,12 @@ SRC=src/monda_debug.ml \
 LIBMONDA_GDB=libmonda_gdb.so
 
 all: $(GDB_BACKEND) $(SRC)
+	$(CC) -c -o gdb_backend/to_gdb.o gdb_backend/to_gdb.c
+	$(CC) -c -o gdb_backend/from_gdb.o gdb_backend/from_gdb.c
 	$(OCAMLOPT) -output-obj -o $(LIBMONDA_GDB) \
 	  ocamlcommon.cmxa ocamloptcomp.cmxa dynlink.cmxa bigarray.cmxa \
-	  $(SRC) $(GDB_BACKEND)
+	  $(SRC) $(GDB_BACKEND) gdb_backend/to_gdb.o \
+          gdb_backend/from_gdb.o
 
 .PHONY: clean
 clean: 

@@ -32,15 +32,15 @@
 let cmt_cache =
   Cmt_cache.create ~search_path:(fun () -> [])
 
-let value_printer =
-  Value_printer.create ~debugger:(module Gdb_debugger : Debugger.S)
-    ~cmt_cache
+module Our_value_printer = Value_printer.Make (Gdb_debugger)
+
+let value_printer = Our_value_printer.create ~cmt_cache
 
 let print_value ~addr ~(stream : Gdb_debugger.stream) ~dwarf_type ~summary
       ~max_depth ~cmt_file_search_path:_ =
   (* Care: [stream] is a naked pointer. *)
-  Value_printer.print value_printer
-    ~addr
+  Our_value_printer.print value_printer
+    ~scrutinee:addr
     ~formatter:(Gdb_debugger.formatter stream)
     ~dwarf_type
     ~summary

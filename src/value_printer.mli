@@ -29,19 +29,20 @@
 
 (** Printer for OCaml values guided by data from the heap and .cmt files. *)
 
-type t
+module Make (D : Debugger.S) : sig
+  type t
 
-val create
-   : debugger:(module Debugger.S)
-  -> cmt_cache:Cmt_cache.t
-  -> t
+  val create
+     : cmt_cache:Cmt_cache.t
+    -> t
 
-val print
-   : t
-  -> scrutinee:Debugger.obj
-  -> dwarf_type:string
-  -> summary:bool
-  -> max_depth:int
-  -> cmt_file_search_path:string list
-  -> formatter:Format.formatter
-  -> unit
+  val print
+     : t
+    -> scrutinee:D.Obj.t
+    -> dwarf_type:string
+    -> summary:bool
+    -> max_depth:int
+    -> cmt_file_search_path:string list
+    -> formatter:Format.formatter
+    -> unit
+end
