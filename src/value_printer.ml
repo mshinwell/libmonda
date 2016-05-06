@@ -1,34 +1,35 @@
-(**************************************************************************)
-(*                                                                        *)
-(*                Make OCaml native debugging awesome!                    *)
-(*                                                                        *)
-(*                  Mark Shinwell, Jane Street Europe                     *)
-(*                                                                        *)
-(* Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
-(*                                                                        *)
-(* Permission is hereby granted, free of charge, to any person obtaining  *)
-(* a copy of this software and associated documentation files             *)
-(* (the "Software"), to deal in the Software without restriction,         *)
-(* including without limitation the rights to use, copy, modify, merge,   *)
-(* publish, distribute, sublicense, and/or sell copies of the Software,   *)
-(* and to permit persons to whom the Software is furnished to do so,      *)
-(* subject to the following conditions:                                   *)
-(*                                                                        *)
-(* The above copyright notice and this permission notice shall be         *)
-(* included in all copies or substantial portions of the Software.        *)
-(*                                                                        *)
-(* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        *)
-(* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     *)
-(* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. *)
-(* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   *)
-(* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   *)
-(* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      *)
-(* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 *)
-(*                                                                        *)
-(**************************************************************************)
+(***************************************************************************)
+(*                                                                         *)
+(*                 Make OCaml native debugging awesome!                    *)
+(*                                                                         *)
+(*                   Mark Shinwell, Jane Street Europe                     *)
+(*                                                                         *)
+(*  Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
+(*                                                                         *)
+(*  Permission is hereby granted, free of charge, to any person obtaining  *)
+(*  a copy of this software and associated documentation files             *)
+(*  (the "Software"), to deal in the Software without restriction,         *)
+(*  including without limitation the rights to use, copy, modify, merge,   *)
+(*  publish, distribute, sublicense, and/or sell copies of the Software,   *)
+(*  and to permit persons to whom the Software is furnished to do so,      *)
+(*  subject to the following conditions:                                   *)
+(*                                                                         *)
+(*  The above copyright notice and this permission notice shall be         *)
+(*  included in all copies or substantial portions of the Software.        *)
+(*                                                                         *)
+(*  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        *)
+(*  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     *)
+(*  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. *)
+(*  IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   *)
+(*  CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   *)
+(*  TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      *)
+(*  SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 *)
+(*                                                                         *)
+(***************************************************************************)
 
 [@@@ocaml.warning "+a-4-9-30-40-41-42"]
 
+module List = ListLabels
 module Variant_kind = Type_oracle.Variant_kind
 
 let debug = Monda_debug.debug
@@ -38,25 +39,40 @@ type t = {
   type_oracle : Type_oracle.t;
 }
 
-let create ~debugger ~cmt_cache =
-  { debugger;
-    type_oracle = Type_oracle.create ~cmt_cache;
+type state = {
+  summary : bool;
+  depth : int;
+  max_depth : int;
+  print_sig : bool;
+  formatter : Format.formatter;
+}
+
+let descend state =
+  { state with
+    depth = state.depth + 1;
+    print_sig = false;
   }
 
-let rec value_looks_like_list value =
-  if Gdb.Obj.is_int value && Gdb.Obj.int value = 0 (* nil *) then
+let create ~debugger ~cmt_cache =
+  { debugger;
+    type_oracle = Type_oracle.create ~cmt_cache ~debugger;
+  }
+
+let rec value_looks_like_list t value =
+  let module D = (val t.debugger : Debugger.S) in
+  if D.Obj.is_int value && D.Obj.int value = 0 (* nil *) then
     true
   else
-    if (not (Gdb.Obj.is_int value))
-       && Gdb.Obj.is_block value
-       && Gdb.Obj.tag value = 0
-       && Gdb.Obj.size value = 2
+    if (not (D.Obj.is_int value))
+       && D.Obj.is_block value
+       && D.Obj.tag_exn value = 0
+       && D.Obj.size_exn value = 2
     then
-      value_looks_like_list (Gdb.Obj.field value 1)
+      value_looks_like_list t (D.Obj.field_exn value 1)
     else
       false
 
-let print_type_of_print_value ~formatter ~type_expr_and_env =
+let print_type_of_value _t ~state ~type_expr_and_env =
   (* In the cases where the type expression is absent or unhelpful then
      we could print, e.g. " : string" when the value has tag [String_tag].
      However, this might be misleading, in the case where the value is
@@ -65,6 +81,7 @@ let print_type_of_print_value ~formatter ~type_expr_and_env =
      What we will do, however, is suppress printing of e.g. " : 'a" since
      it would only seem to serve to clutter.
   *)
+  let formatter = state.formatter in
   match type_expr_and_env with
   | None -> ()
   | Some (type_expr, _env) ->
@@ -78,99 +95,101 @@ let print_type_of_print_value ~formatter ~type_expr_and_env =
       Printtyp.reset_and_mark_loops type_expr;
       Printtyp.type_expr formatter type_expr
 
-let rec print_value t ?(depth=0) ?(print_sig=true) ~summary ~formatter =
-      ~type_of_ident:type_expr_and_env v =
+let rec print_value t ~state ~type_of_ident:type_expr_and_env v : unit =
   let module D = (val t.debugger : Debugger.S) in
-  if (summary && depth > 2) || depth > value_printer_max_depth () then begin
+  let formatter = state.formatter in
+  if (state.summary && state.depth > 2)
+      || state.depth > state.max_depth then begin
     Format.fprintf formatter ".."
   end else begin
+    let formatter = state.formatter in
     match
       Type_oracle.find_type_information t.type_oracle ~formatter
-          ~type_expr_and_env ~scrutinee:v
+        ~type_expr_and_env ~scrutinee:v
     with
-    | Obj_unboxed -> print_int ~formatter v
+    | Obj_unboxed -> print_int t ~state v
     | Obj_unboxed_but_should_be_boxed ->
       (* One common case: a value that is usually boxed but for the moment is
          initialized with [Val_unit].  For example: module fields before
          initializers have been run when using [Closure]. *)
       if D.Obj.int v = 0 then Format.fprintf formatter "()"
-      else Format.fprintf formatter "%Ld" v
+      else Format.fprintf formatter "0x%Lx" (D.Obj.raw v)
     | Obj_boxed_traversable ->
-      if summary then Format.fprintf formatter "..."
+      if state.summary then Format.fprintf formatter "..."
       else
         let printers =
-          Array.init (D.Obj.size v) ~f:(fun _ v ->
-            print_value t ~summary ~formatter ~depth:(succ depth) ~print_sig
-                ~type_of_ident:None ~summary ~formatter v)
+          Array.init (D.Obj.size_exn v) (fun _ v ->
+            print_value t ~state:(descend state) ~type_of_ident:None v)
         in
-        generic_printer ~printers ~formatter v
+        generic_printer t ~state ~guess_if_it's_a_list:true ~printers v
     | Obj_boxed_not_traversable ->
-      Format.fprintf formatter "<0x%Lx, tag %d>" v (D.Obj.tag v)
-    | Char -> print_char ~formatter v
+      Format.fprintf formatter "<0x%Lx, tag %d>" (D.Obj.raw v)
+        (D.Obj.tag_exn v)
+    | Int -> Format.fprintf formatter "%d" (D.Obj.int v)
+    | Char -> print_char t ~state v
     | Abstract path -> Format.fprintf formatter "<%s>" (Path.name path)
-    | Array (ty, env) -> print_array t ~summary ~formatter ~ty ~env v
-    | List (ty, env) -> print_list t ~summary ~formatter ~ty ~env v
-    | Ref (ty, env) -> print_ref t ~summary ~formatter ~ty ~env v
-    | Tuple (tys, env) -> print_tuple t ~summary ~formatter ~tys ~env v
+    | Array (ty, env) -> print_array t ~state ~ty ~env v
+    | List (ty, env) ->
+      print_list t ~state ~ty_and_env:(Some (ty, env)) v
+    | Ref (ty, env) -> print_ref t ~state ~ty ~env v
+    | Tuple (tys, env) -> print_tuple t ~state ~tys ~env v
     | Constant_constructor (name, kind) ->
-      print_constant_constructor ~formatter ~kind ~name
+      print_constant_constructor t ~state ~kind ~name
     | Non_constant_constructor (path, ctor_decls, params,
           instantiated_params, env, kind) ->
-      print_non_constant_constructor t ~path ~ctor_decls ~params
-          ~instantiated_params ~env ~kind ~formatter v
+      print_non_constant_constructor t ~state ~path ~ctor_decls ~params
+          ~instantiated_params ~env ~kind v
     | Record (path, params, args, fields, record_repr, env) ->
-      print_record t ~summary ~formatter ~path ~params ~args ~fields
-          ~record_repr ~env
+      print_record t ~state ~path ~params ~args ~fields
+          ~record_repr ~env v
     | Open -> Format.fprintf formatter "<value of open type>"
-    | String -> print_string ~formatter v
-    | Float -> print_float ~formatter v
-    | Float_array -> print_float_array t ~summary ~formatter v
-    | Closure -> print_closure ~summary ~formatter ~scrutinee:v
+    | String -> print_string t ~state v
+    | Float -> print_float t ~state v
+    | Float_array -> print_float_array t ~state v
+    | Closure -> print_closure t ~state ~scrutinee:v
     | Lazy -> Format.fprintf formatter "<lazy>"
     | Object -> Format.fprintf formatter "<object>"
     | Abstract_tag -> Format.fprintf formatter "<block with Abstract_tag>"
-    | Custom -> print_custom_block t ~formatter ~value
+    | Custom -> print_custom_block t ~state v
   end;
-  if print_sig then begin
-    print_type_of_print_value ~formatter ~type_expr_and_env
+  if state.print_sig then begin
+    print_type_of_value t ~state ~type_expr_and_env
   end
 
-and generic_printer t ?(separator = ",") ?prefix ~guess_if_it's_a_list
-      ~printers ~formatter value =
+and generic_printer t ~state ?(separator = ",") ?prefix
+      ~guess_if_it's_a_list ~(printers : (Debugger.obj -> unit) array)
+      value : unit =
   let module D = (val t.debugger : Debugger.S) in
+  let formatter = state.formatter in
   if guess_if_it's_a_list
       (* If a value, that cannot be identified sensibly from its type,
          looks like a (non-empty) list then we assume it is such.  It seems
          more likely than a set of nested pairs. *)
-      && value_looks_like_list value
+      && value_looks_like_list t value
   then
-    if summary then
+    if state.summary then
       Format.fprintf formatter "[...]?"
     else begin
-      let print_element =
-        print_print_value ~depth:(succ depth) ~print_sig:false ~formatter
-        ~type_of_ident:None ~summary
-      in
-      list ~print_element ~formatter v;
+      print_list t ~state ~ty_and_env:None value;
       Format.fprintf formatter "?"
     end
   else begin
     begin match prefix with
-    | None -> Format.fprintf formatter "@[<1>[%d: " (D.Obj.tag value)
+    | None -> Format.fprintf formatter "@[<1>[%d: " (D.Obj.tag_exn value)
     (* CR mshinwell: remove dreadful hack *)
     | Some "XXX" -> ()
     | Some p -> Format.fprintf formatter "@[%s " p
     end;
-    let original_size = D.Obj.size value in
-    let max_size = D.max_array_etc_elements_to_print () in
+    let original_size = D.Obj.size_exn value in
+    let max_size = D.max_array_elements_etc_to_print () in
     let size, truncated =
       if original_size > max_size then max_size, true
       else original_size, false
     in
     for field = 0 to size - 1 do
       if field > 0 then Format.fprintf formatter "%s@;<1 0>" separator;
-      try printers.(field) (D.Obj.field value field)
-      with D.Read_error _ ->
+      try printers.(field) (D.Obj.field_exn value field)
+      with D.Read_error ->
         Format.fprintf formatter "<field %d read failed>" field
     done;
     if truncated then begin
@@ -180,24 +199,27 @@ and generic_printer t ?(separator = ",") ?prefix ~guess_if_it's_a_list
     begin match prefix with
     | None -> Format.fprintf formatter "]@]"
     | Some "XXX" -> ()
-    | Some p -> Format.fprintf formatter "@]"
-    end;
-    Done
+    | Some _ -> Format.fprintf formatter "@]"
+    end
   end
 
-and print_int ~formatter v =
-  Format.fprintf formatter "%Ld" v
-
-and print_char ~formatter v =
+and print_int t ~state v =
   let module D = (val t.debugger : Debugger.S) in
+  let formatter = state.formatter in
+  Format.fprintf formatter "%d" (D.Obj.int v)
+
+and print_char t ~state v =
+  let module D = (val t.debugger : Debugger.S) in
+  let formatter = state.formatter in
   let value = D.Obj.int v in
   if value >= 0 && value <= 255 then
     Format.fprintf formatter "'%s'" (Char.escaped (Char.chr value))
   else
-    Format.fprintf formatter "%Ld" v
+    Format.fprintf formatter "%Ld" (D.Obj.raw v)
 
-and print_string ~formatter v =
+and print_string t ~state v =
   let module D = (val t.debugger : Debugger.S) in
+  let formatter = state.formatter in
   let s = D.Obj.string v in
   let max_len = 30 in
   if String.length s > max_len then
@@ -206,61 +228,60 @@ and print_string ~formatter v =
   else
     Format.fprintf formatter "%S" (D.Obj.string v)
 
-and print_tuple t ~summary ~formatter ~tys ~env v =
+and print_tuple t ~state ~tys ~env v =
   let module D = (val t.debugger : Debugger.S) in
-  if summary && (List.length tys > 2 || depth > 0) then
+  let formatter = state.formatter in
+  if state.summary && (List.length tys > 2 || state.depth > 0) then
     Format.fprintf formatter "(...)"
   else
     let component_types = Array.of_list tys in
-    let size_ok = Array.length component_types = D.Obj.size v in
+    let size_ok = Array.length component_types = D.Obj.size_exn v in
     let printers =
-      Array.map component_types ~f:(fun ty v ->
-        let type_of_ident = if size_ok then Some (ty, env) else None in
-        print_print_value ~depth:(succ depth) ~print_sig:false
-          ~type_of_ident ~summary ~formatter v
-      )
+      Array.map (fun ty v ->
+          let type_of_ident = if size_ok then Some (ty, env) else None in
+          print_value t ~state:(descend state) ~type_of_ident v)
+        component_types
     in
     if List.length tys > 1 then Format.fprintf formatter "(";
-    generic_printer ~printers ~prefix:"XXX" ~force_never_like_list:true
-      ~formatter v;
+    generic_printer t ~state ~printers ~prefix:"XXX"
+      ~guess_if_it's_a_list:false v;
     if List.length tys > 1 then Format.fprintf formatter ")"
 
-and print_array t ~summary ~formatter ~ty ~env v =
+and print_array t ~state ~ty ~env v =
   let module D = (val t.debugger : Debugger.S) in
-  let size = D.Obj.size v in
+  let formatter = state.formatter in
+  let size = D.Obj.size_exn v in
   if size = 0 then
     Format.fprintf formatter "@[[| |]@]"
-  else if summary then
+  else if state.summary then
     Format.fprintf formatter "@[[|...|]@]"
   else begin
     Format.fprintf formatter "[| ";
     let printers =
-      Array.init size ~f:(fun _ v ->
+      Array.init size (fun _ v ->
         let type_of_ident = Some (ty, env) in
-        print_value ~depth:(succ depth) ~print_sig
-          ~type_of_ident ~summary ~formatter v
-      )
+        print_value t ~state:(descend state) ~type_of_ident v)
     in
-    generic_printer ~separator:";" ~printers ~prefix:"XXX"
-      ~force_never_like_list:true ~formatter v;
+    generic_printer t ~state ~separator:";" ~printers ~prefix:"XXX"
+      ~guess_if_it's_a_list:false v;
     Format.fprintf formatter " |]"
   end
 
-and print_list t ~summary ~formatter v =
+and print_list t ~state ~ty_and_env v : unit =
   let module D = (val t.debugger : Debugger.S) in
+  let formatter = state.formatter in
   let print_element =
-    print_value ~depth:(succ depth) ~print_sig:false ~formatter
-      ~type_of_ident:(Some (ty, env)) ~summary
+    print_value t ~state:(descend state) ~type_of_ident:ty_and_env
   in
   let rec aux v =
     if D.Obj.is_block v then begin
       try
-        let elt = D.Obj.field v 0 in
-        let next = D.Obj.field v 1 in
+        let elt = D.Obj.field_exn v 0 in
+        let next = D.Obj.field_exn v 1 in
         print_element elt;
         if D.Obj.is_block next then Format.fprintf formatter ";@;<1 0>";
         aux next
-      with D.Read_error _ ->
+      with D.Read_error ->
         Format.fprintf formatter "<list element read failed>"
     end
   in
@@ -268,20 +289,21 @@ and print_list t ~summary ~formatter v =
   aux v;
   Format.fprintf formatter "]@]"
 
-and print_ref t ~summary ~formatter ~ty ~env v =
+and print_ref t ~state ~ty ~env v =
   let module D = (val t.debugger : Debugger.S) in
+  let formatter = state.formatter in
   Format.fprintf formatter "ref ";
-  print_value ~depth:(succ depth) ~type_of_ident:(Some (ty, env))
-    ~print_sig:false ~summary ~formatter (D.Obj.field v 0)
+  print_value t ~state:(descend state) ~type_of_ident:(Some (ty, env))
+    (D.Obj.field_exn v 0)
 
-and print_record t ~summary ~formatter ~path ~params ~args ~fields
-      ~record_repr ~env =
+and print_record t ~state ~path:_ ~params ~args ~fields ~record_repr ~env v =
   let module D = (val t.debugger : Debugger.S) in
-  if summary then
+  let formatter = state.formatter in
+  if state.summary then
     Format.fprintf formatter "{...}"
-  else if List.length fields <> D.Obj.size v then
+  else if List.length fields <> D.Obj.size_exn v then
     Format.fprintf formatter "{expected %d fields, target has %d}"
-      (List.length fields) (D.Obj.size v)
+      (List.length fields) (D.Obj.size_exn v)
   else begin
     let fields = Array.of_list fields in
     let type_for_field ~index =
@@ -289,77 +311,93 @@ and print_record t ~summary ~formatter ~path ~params ~args ~fields
       | Types.Record_float -> Predef.type_float
       | Types.Record_regular ->
         let field_type = fields.(index).Types.ld_type in
-        try Ctype.apply env params field_type args
+        begin try Ctype.apply env params field_type args
         with Ctype.Cannot_apply -> field_type
+        end
+      | Types.Record_extension
+      | Types.Record_inlined _ ->
+        (* CR mshinwell: fix this *)
+        Predef.type_int
       end
     in
     let fields_helpers =
-      Array.mapi fields ~f:(fun index ld ->
-        let typ = type_for_field ~index in
-        let printer v =
-          print_value ~depth:(succ depth)
-            ~type_of_ident:(Some (typ, env))
-            ~print_sig:false ~summary ~formatter v
-        in
-        Ident.name ld.Types.ld_id, printer
-      )
+      Array.mapi (fun index ld ->
+          let typ = type_for_field ~index in
+          let printer v =
+            print_value t ~state:(descend state)
+              ~type_of_ident:(Some (typ, env)) v
+          in
+          Ident.name ld.Types.ld_id, printer)
+        fields 
     in
-    if depth = 0 && Array.length fields > 1 then begin
+    if state.depth = 0 && Array.length fields > 1 then begin
       Format.pp_print_newline formatter ();
       Format.fprintf formatter "@[<v>  "
     end;
-    let nb_fields = D.Obj.size v in
+    let nb_fields = D.Obj.size_exn v in
     Format.fprintf formatter "@[<v 0>{ ";
     for field_nb = 0 to nb_fields - 1 do
       if field_nb > 0 then Format.fprintf formatter "@   ";
       try
-        let v = D.Obj.field v field_nb in
+        let v = D.Obj.field_exn v field_nb in
         let (field_name, printer) = fields_helpers.(field_nb) in
         Format.fprintf formatter "@[<2>%s@ =@ " field_name;
         printer v;
         Format.fprintf formatter ";@]"
-      with D.Read_error _ ->
+      with D.Read_error ->
         Format.fprintf formatter "<could not read field %d>" field_nb
     done;
     Format.fprintf formatter "@ }@]";
-    if depth = 0 && Array.length fields > 1 then begin
+    if state.depth = 0 && Array.length fields > 1 then begin
       Format.fprintf formatter "@]"
     end
   end
 
-and print_closure t ~summary ~formatter ~scrutinee:v =
+and print_closure t ~state ~scrutinee:v =
   let module D = (val t.debugger : Debugger.S) in
+  let formatter = state.formatter in
   try
-    if summary then
+    if state.summary then
       Format.fprintf formatter "<fun>"
     else begin
       let pc =
-        let name = D.linkage_name_at_pc ~pc:(D.Target.read_field v 0) in
-        (* Try to find out the function pointer for the actual function
-           in the case that [scrutinee] is actually a currying or
-           tuplifying wrapper. *)
-        if not (Naming_conventions.is_currying_wrapper name) then
-          pc
-        else
-          (* The "real" function pointer should be the last entry in the
-             environment of the closure. *)
-          D.Target.read_field v (D.Obj.size v - 1)
+        let pc = D.Obj.field_as_addr_exn v 0 in
+        match D.symbol_at_pc pc with
+        | None -> pc
+        | Some symbol ->
+          (* Try to find out the function pointer for the actual function
+             in the case that [scrutinee] is actually a currying or
+             tuplifying wrapper. *)
+          if not (Naming_conventions.is_currying_wrapper symbol) then
+            pc
+          else
+            (* The "real" function pointer should be the last entry in the
+               environment of the closure. *)
+            D.Obj.field_as_addr_exn v (D.Obj.size_exn v - 1)
       in
-      match D.filename_and_line_number_of_pc ~pc with
-      | None -> Format.fprintf formatter "<fun> (0x%Lx)" pc
+      match
+        D.filename_and_line_number_of_pc pc
+          ~use_previous_line_number_if_on_boundary:true
+      with
+      | None ->
+        Format.fprintf formatter "<fun> (%a)"
+          D.Target_memory.print_addr pc
       | Some (filename, Some line) ->
         Format.fprintf formatter "<fun> (%s:%d)" filename line
       | Some (filename, None) ->
-        Format.fprintf formatter "<fun> (%s, 0x%Lx)" filename pc
+        Format.fprintf formatter "<fun> (%s, %a)" filename
+          D.Target_memory.print_addr pc
     end
-  with D.Read_error _ -> Format.fprintf formatter "<closure?>"
+  with D.Read_error -> Format.fprintf formatter "<closure?>"
 
-and print_constant_constructor ~formatter ~kind ~name =
+and print_constant_constructor _t ~state ~kind ~name =
+  let formatter = state.formatter in
   Format.fprintf formatter "%s%s" (Variant_kind.to_string_prefix kind) name
 
-and print_non_constant_constructor t ~path ~ctor_decls ~params
-      ~instantiated_params ~env ~kind ~formatter ~value =
+and print_non_constant_constructor t ~state ~path:_ ~ctor_decls ~params
+      ~instantiated_params ~env ~kind v =
   let module D = (val t.debugger : Debugger.S) in
+  let formatter = state.formatter in
   let kind = Variant_kind.to_string_prefix kind in
   if debug then begin
     List.iter params ~f:(fun ty ->
@@ -379,122 +417,145 @@ and print_non_constant_constructor t ~path ~ctor_decls ~params
       ~f:(fun (non_constant_ctors, next_ctor_number) ctor_decl ->
             let ident = ctor_decl.Types.cd_id in
             match ctor_decl.Types.cd_args with
-            | [] ->
-              non_constant_ctors, next_ctor_number
-            | _ ->
+            | Cstr_tuple [] -> non_constant_ctors, next_ctor_number
+            | Cstr_tuple arg_tys ->
               (* CR mshinwell: check [return_type] is just that, and use it.
                  Presumably for GADTs. *)
               (next_ctor_number,
-                (ident, ctor_decl.Types.cd_args))::non_constant_ctors,
+                (ident, arg_tys))::non_constant_ctors,
+                next_ctor_number + 1
+            | Cstr_record label_decls ->
+              let arg_tys =
+                List.map label_decls
+                  ~f:(fun (label_decl : Types.label_declaration) ->
+                    label_decl.ld_type)
+              in
+              (next_ctor_number,
+                (ident, arg_tys))::non_constant_ctors,
                 next_ctor_number + 1)
   in
   let ctor_info =
-    let tag = D.Obj.tag v in
+    let tag = D.Obj.tag_exn v in
     try Some (List.assoc tag non_constant_ctors) with Not_found -> None
   in
   begin match ctor_info with
   | None ->
-    generic_printer ~printers:(Lazy.force generic_printers) ~formatter v
+    let printers =
+      Array.init (D.Obj.size_exn v) (fun _index v ->
+        print_value t ~state:(descend state) ~type_of_ident:None v)
+    in
+    generic_printer t ~state ~printers ~guess_if_it's_a_list:false v
   | Some (cident, args) ->
-    if summary || List.length args <> D.Obj.size v then begin
+    if state.summary || List.length args <> D.Obj.size_exn v then begin
       Format.fprintf formatter "%s%s (...)" kind (Ident.name cident)
     end else begin
       let printers =
         let args = Array.of_list args in
-        Array.map args ~f:(fun arg_ty v ->
-          if debug then begin
-            Format.fprintf formatter "arg>>";
-            Printtyp.reset_and_mark_loops arg_ty;
-            Printtyp.type_expr formatter arg_ty;
-            Format.fprintf formatter "<<"
-          end;
-          let arg_ty =
-            try Ctype.apply env params arg_ty instantiated_params
-            with Ctype.Cannot_apply -> arg_ty
-          in
-          value t ~depth:(succ depth) ~type_of_ident:(Some (arg_ty, env))
-            ~print_sig:false ~formatter v
-            ~summary
-        )
+        Array.map (fun arg_ty v ->
+            if debug then begin
+              Format.fprintf formatter "arg>>";
+              Printtyp.reset_and_mark_loops arg_ty;
+              Printtyp.type_expr formatter arg_ty;
+              Format.fprintf formatter "<<"
+            end;
+            let arg_ty =
+              try Ctype.apply env params arg_ty instantiated_params
+              with Ctype.Cannot_apply -> arg_ty
+            in
+            print_value t ~state:(descend state)
+              ~type_of_ident:(Some (arg_ty, env)) v)
+          args
       in
       let prefix =
         let name = Ident.name cident in
         if List.length args > 1 then Printf.sprintf "%s%s (" kind name
         else name
       in
-      generic_printer ~printers ~prefix ~formatter v
-        ~force_never_like_list:true;
+      generic_printer t ~state ~printers ~prefix
+        ~guess_if_it's_a_list:true v;
       if List.length args > 1 then Format.fprintf formatter ")"
     end
   end
 
-and print_float t ~formatter ~v =
+and print_float t ~state v =
   let module D = (val t.debugger : Debugger.S) in
-  try Format.fprintf formatter "%f" (D.Target.read_double v)
-  with D.Read_error _ -> Format.fprintf formatter "<double read failed>"
+  let formatter = state.formatter in
+  try Format.fprintf formatter "%f" (D.Obj.double_field_exn v 0)
+  with D.Read_error -> Format.fprintf formatter "<double read failed>"
 
-and print_float_array t ~summary ~formatter v =
+and print_float_array t ~state v =
   let module D = (val t.debugger : Debugger.S) in
-  let size = D.Obj.size v in
+  let formatter = state.formatter in
+  let size = D.Obj.size_exn v in
   if size = 0 then Format.fprintf formatter "@[[| |] (* float array *)@]"
-  else if summary then Format.fprintf formatter "@[[|...|]@]"
+  else if state.summary then Format.fprintf formatter "@[[|...|]@]"
   else begin
     Format.fprintf formatter "@[<1>[| ";
     for i = 0 to size - 1 do
-      Format.fprintf formatter "%f" (D.Obj.double_field v i);
+      Format.fprintf formatter "%f" (D.Obj.double_field_exn v i);
       if i < size - 1 then Format.fprintf formatter ";@;<1 0>"
     done;
     Format.fprintf formatter " |] (* float array *)@]"
   end
 
-and print_custom_block t ~formatter ~value =
+and print_custom_block t ~state v =
   let module D = (val t.debugger : Debugger.S) in
-  if D.Obj.size v < 2 then
+  let formatter = state.formatter in
+  if D.Obj.size_exn v < 2 then
     Format.fprintf formatter "<malformed custom block>"
   else
-    let custom_ops = D.Obj.field v 0 in
-    let identifier = D.Obj.c_string_field custom_ops 0 in
-    let data_ptr = D.Obj.field v 1 in
+    let custom_ops = D.Obj.field_exn v 0 in
+    let identifier = D.Obj.c_string_field_exn custom_ops 0 in
+    let data_ptr = D.Obj.field_as_addr_exn v 1 in
     match Naming_conventions.examine_custom_block_identifier identifier with
     | Bigarray ->
-      Format.fprintf formatter "<Bigarray: data at 0x%Lx>" data_ptr
-    | Mutex ->
-      Format.fprintf formatter "<Mutex.t 0x%Lx> (* systhreads *)" data_ptr
-    | Condition ->
-      Format.fprintf formatter "<Condition.t 0x%Lx> (* systhreads *)" data_ptr
+      Format.fprintf formatter "<Bigarray: data at %a>"
+        D.Target_memory.print_addr data_ptr
+    | Systhreads_mutex ->
+      Format.fprintf formatter "<Mutex.t %a> (* systhreads *)"
+        D.Target_memory.print_addr data_ptr
+    | Systhreads_condition ->
+      Format.fprintf formatter "<Condition.t %a> (* systhreads *)"
+        D.Target_memory.print_addr data_ptr
     | Unknown ->
-      Format.fprintf formatter "<custom block '%s' pointing at 0x%Lx>"
-        identifier data_ptr
+      Format.fprintf formatter "<custom block '%s' pointing at %a>"
+        identifier
+        D.Target_memory.print_addr data_ptr
 
-let print t ?depth ?print_sig ~type_of_ident ~summary out v =
-  let module D = (val t.debugger : Debugger.S) in
-  if debug then Printf.printf "Printer.value entry point\n%!";
-  let formatter =
-    Format.make_formatter
-      (fun str pos len -> D.print out (String.sub str pos len))
-      (fun () -> ())
-  in
-  let print_sig =
-    match print_sig with
-    | None -> false
-    | Some () -> true
-  in
-  Format.fprintf formatter "@[";
-  print_value ?depth ?print_sig ~type_of_ident ~summary ~formatter v;
-  Format.fprintf formatter "@]";
-  Format.pp_print_flush formatter ()
-
-let print_from_gdb addr stream ~dwarf_type ~call_site ~summary =
-  let type_of_ident =
+let print t ~scrutinee ~dwarf_type ~summary ~max_depth
+      ~cmt_file_search_path:_ ~formatter =
+  let cmt_file_and_ident_name =
     match Name_laundry.split_base_type_die_name dwarf_type with
     | None -> None
     | Some { output_path; ident_name; } ->
       let output_dir = Filename.dirname output_path in
-
+      let source_file = Filename.basename output_path in
+      let cmt_leafname = (Filename.chop_extension source_file) ^ ".cmt" in
+      let first_try = output_dir ^ Filename.dir_sep ^ cmt_leafname in
+      if Sys.file_exists first_try then begin
+        Some (Cmt_file.load ~filename:first_try, ident_name)
+      end else begin
+        (* CR mshinwell: search the path here *)
+        None
+      end
   in
   let type_of_ident =
-    find_type_and_env ~symbol_linkage_name ~cmt_file ~call_site
+    match cmt_file_and_ident_name with
+    | None -> None
+    | Some (cmt_file, ident_name) ->
+      Cmt_file.type_of_ident cmt_file ~unique_name:ident_name
   in
-  print ~depth ~print_sig:true ~type_of_ident ~summary out v
-
-let () = Callback.register "monda_val_print" print_from_gdb
+  let module D = (val t.debugger : Debugger.S) in
+  if debug then Printf.printf "Value_printer.print entry point\n%!";
+  Format.fprintf formatter "@[";
+  let state = {
+    summary;
+    depth = 0;
+    max_depth;
+    print_sig = true;
+    formatter;
+  }
+  in
+  print_value t ~state ~type_of_ident scrutinee;
+  Format.fprintf formatter "@]";
+  Format.pp_print_flush formatter ()

@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2015--2016 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -27,22 +27,10 @@
 (*                                                                         *)
 (***************************************************************************)
 
-let is_currying_wrapper name =
-  (* CR mshinwell: share names with compilerlibs directly *)
-  let curry = "caml_curry" in
-  let tuplify = "caml_tuplify" in
-  (* CR mshinwell: this could maybe be made more precise *)
-  String.sub name 0 (String.length curry) = curry
-    || String.sub name 0 (String.length tuplify) = tuplify
+(** Implementation of [Debugger.S] for gdb.
+    This doesn't contain the callbacks invoked from gdb itself.  The
+    OCaml implementations of those are in from_gdb_ocaml.ml and the
+    C implementations in from_gdb.c. *)
 
-type custom_block_identifier =
-  | Bigarray
-  | Systhreads_mutex
-  | Systhreads_condition
-  | Unknown
-
-let examine_custom_block_identifier = function
-  | "_bigarray" -> Bigarray
-  | "_mutex" -> Systhreads_mutex
-  | "_condition" -> Systhreads_condition
-  | _ -> Unknown
+include Debugger_intf.S
+  with type stream = private int

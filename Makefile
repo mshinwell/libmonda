@@ -31,11 +31,13 @@
 # by adding "-fPIC" to asmrun/Makefile and configuring thus:
 #   ./configure -prefix ... -cc "gcc -fPIC" -aspp "gcc -c -fPIC"
 
-GDB_ROOT=/mnt/local/sda1/mshinwell/mshinwell-gdb
+#GDB_ROOT=/mnt/local/sda1/mshinwell/mshinwell-gdb
+GDB_ROOT=/home/mark/dev/mshinwell-gdb
 
 OCAML_ROOT=`ocamlopt -where`
 
-OCAMLOPT=ocamlopt -verbose -I +compiler-libs -g -fPIC -ccopt -fPIC -ccopt -g \
+OCAMLOPT=ocamlopt -verbose -I +compiler-libs -I ./src \
+  -g -fPIC -ccopt -fPIC -ccopt -g \
   -ccopt -I$(OCAML_ROOT) \
   -ccopt -I$(GDB_ROOT)/gdb \
   -ccopt -I$(GDB_ROOT)/gdb/common \
@@ -46,15 +48,24 @@ OCAMLOPT=ocamlopt -verbose -I +compiler-libs -g -fPIC -ccopt -fPIC -ccopt -g \
   -ccopt -I$(GDB_ROOT)/gdb/build-gnulib/import
 
 GDB_BACKEND=gdb_backend/from_gdb.c \
+  gdb_backend/from_gdb_ocaml.ml \
   gdb_backend/to_gdb.c \
-  gdb_backend/gdb_debugger.ml
+  gdb_backend/gdb_debugger.mli \
+  gdb_backend/gdb_debugger.ml \
 
-SRC=src/abstraction_breaker.ml \
+SRC=src/monda_debug.ml \
+    src/cmt_cache.mli \
     src/cmt_cache.ml \
+    src/cmt_file.mli \
     src/cmt_file.ml \
-    src/monda_debug.ml \
+    src/naming_conventions.mli \
     src/naming_conventions.ml \
+    src/abstraction_breaker.mli \
+    src/abstraction_breaker.ml \
+    src/debugger.mli \
+    src/type_oracle.mli \
     src/type_oracle.ml \
+    src/value_printer.mli \
     src/value_printer.ml
 
 LIBMONDA_GDB=libmonda_gdb.so
@@ -62,7 +73,7 @@ LIBMONDA_GDB=libmonda_gdb.so
 all: $(GDB_BACKEND) $(SRC)
 	$(OCAMLOPT) -output-obj -o $(LIBMONDA_GDB) \
 	  ocamlcommon.cmxa ocamloptcomp.cmxa dynlink.cmxa bigarray.cmxa \
-	  $(GDB_BACKEND) $(SRC)
+	  $(SRC) $(GDB_BACKEND)
 
 .PHONY: clean
 clean: 

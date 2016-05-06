@@ -30,6 +30,7 @@
 module T = Typedtree
 
 let debug = Monda_debug.debug
+let print_path = Monda_debug.print_path
 
 type t = {
   cmt_cache : Cmt_cache.t;
@@ -104,7 +105,7 @@ let rec find_module_binding t ~dir_prefix ~path ~is_toplevel ~env =
          look for the .cmt of the next module down the path in a subdirectory
          corresponding to the packed module's name. *)
       let dir_prefix =
-        let name = String.lowercase (Ident.name ident) in
+        let name = String.lowercase_ascii (Ident.name ident) in
         match dir_prefix with
         | None -> Some name
         | Some prefix -> Some (Filename.concat prefix name)
@@ -138,7 +139,7 @@ let rec find_module_binding t ~dir_prefix ~path ~is_toplevel ~env =
                   end
               in
               match structure_item.T.str_desc with
-              | T.Tstr_type type_decls when is_toplevel ->
+              | T.Tstr_type (_rec_flag, type_decls) when is_toplevel ->
                 let rec traverse_type_decls ~type_decls =
                   match type_decls with
                   | [] -> traverse_structure ~structure_items

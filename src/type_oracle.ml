@@ -27,32 +27,14 @@
 (*                                                                        *)
 (**************************************************************************)
 
+[@@@ocaml.warning "+a-4-9-30-40-41-42"]
+
 let debug = Monda_debug.debug
+let print_path = Monda_debug.print_path
 
-type t = {
-  abstraction_breaker : Abstraction_breaker.t;
-  debugger : (module Debugger.S);
-}
+module List = ListLabels
 
-let create ~search_path ~debugger =
-  { abstraction_breaker = Abstraction_breaker.create ~search_path;
-    debugger;
-  }
-
-let extract_constant_ctors ~cases =
-  let constant_ctors, _ =
-    List.fold_left cases
-      ~init:([], 0)
-      ~f:(fun (constant_ctors, next_ctor_number) ctor_decl ->
-            let ident = ctor_decl.Types.cd_id in
-            match ctor_decl.Types.cd_args with
-            | [] ->
-              (Int64.of_int next_ctor_number, ident)::constant_ctors,
-                next_ctor_number + 1
-            | _ ->
-              constant_ctors, next_ctor_number)
-  in
-  constant_ctors
+type maybe_boxed = Unboxed of Debugger.obj | Boxed of Debugger.obj
 
 module Variant_kind = struct
   type t = Polymorphic | Non_polymorphic
@@ -62,199 +44,6 @@ module Variant_kind = struct
     | Non_polymorphic -> ""
 end
 module Vk = Variant_kind
-
-let check_predef_paths ~path ~args ~env ~scrutinee =
-  (* CR mshinwell: validate more things (e.g. value size) *)
-  if Path.same path Predef.path_array then
-    match scrutinee with
-    | Unboxed _ -> Some Obj_unboxed_but_should_be_boxed
-    | Boxed _ ->
-      match args with
-      | [arg] -> Some (Array (arg, env))
-      | _ -> Some Obj_boxed_traversable  (* wrong number of arguments *)
-  else if Path.same path Predef.path_list then
-    match args with
-    | [arg] -> Some (List (arg, env))
-    | _ ->
-      match scrutinee with  (* wrong number of arguments *)
-      | Unboxed _ -> Some Obj_unboxed
-      | Boxed _ -> Some Obj_boxed_traversable
-  else if Path.same path Predef.path_int then
-    match scrutinee with
-    | Unboxed _ -> Some Int
-    | Boxed _ -> Some Obj_boxed_traversable  (* should not be boxed *)
-  else if Path.same path Predef.path_char then
-    match scrutinee with
-    | Unboxed _ -> Some Char
-    | Boxed _ -> Some Obj_boxed_traversable  (* should not be boxed *)
-  else
-    None
-
-let rec examine_type_expr t ~formatter ~paths_visited_so_far ~type_expr ~env
-      ~scrutinee =
-  match (Btype.repr type_expr).Types.desc with
-  | Types.Tconstr (path, args, _abbrev_memo_ref) ->
-    begin match check_predef_paths ~path ~args ~env ~scrutinee with
-    | Some result -> result
-    | None ->
-      if debug then
-         Printf.printf "examine_type_expr: Env.find_type '%s': "
-           (print_path path);
-      begin match try Some (Env.find_type path env) with Not_found -> None with
-      | None ->
-        if debug then Printf.printf "not found.\n%!";
-        (* Even if the type is abstract, the declaration should still be in
-           the environment. *)
-        begin match scrutinee with
-        | Unboxed _ -> Obj_unboxed
-        | Boxed _ ->
-          if debug then
-            Printf.printf "examine_type_expr error case 1, load path is: %s\n%!"
-              (String.concat "," !Config.load_path);
-          Obj_boxed_traversable
-        end
-      | Some type_decl ->
-        if debug then Printf.printf "found.\n%!";
-        examine_type_decl t ~formatter ~paths_visited_so_far ~type_expr ~env
-          ~path ~args ~type_decl ~scrutinee
-      end
-    end
-  | Types.Tvariant row_desc ->
-    begin match scrutinee with
-    | Boxed _ ->
-      (* CR mshinwell: support boxed polymorphic variant constructors *)
-      if debug then Printf.printf "examine_type_expr error case 2\n%!";
-      Obj_boxed_traversable
-    | Unboxed scrutinee ->
-      let ctor_names_and_hashes =
-        let labels = List.map row_desc.Types.row_fields ~f:fst in
-        List.map labels ~f:(fun label -> label, Btype.hash_variant label)
-      in
-      let desired_hash = D.Obj.int scrutinee in
-      let matches =
-        List.filter ctor_names_and_hashes
-          ~f:(fun (ctor_name, hash) -> hash = desired_hash)
-      in
-      begin match matches with
-      | [(ctor_name, _hash)] ->
-        Constant_constructor (ctor_name, Vk.Polymorphic)
-      | _::_ | [] -> Obj_unboxed  (* cannot find ctor with given hash *)
-      end
-    end
-  | Types.Ttuple component_types ->
-    begin match scrutinee with
-    | Boxed _ -> Tuple (component_types, env)
-    | Unboxed _ -> Obj_unboxed_but_should_be_boxed
-    end
-  | Types.Tarrow _ ->
-    begin match scrutinee with
-    | Boxed _ -> Closure
-    | Unboxed _ -> Obj_unboxed_but_should_be_boxed
-    end
-  | Types.Tvar _
-  | Types.Tobject _ | Types.Tfield _ | Types.Tnil | Types.Tsubst _
-  | Types.Tunivar _ | Types.Tpoly _ | Types.Tpackage _ ->
-    (* CR mshinwell: more work to do here *)
-    begin match scrutinee with
-    | Boxed _ ->
-      let what =
-        match (Btype.repr type_expr).Types.desc with
-        | Types.Tvar _ -> "Tvar"
-        | Types.Tobject _ -> "Tobject"
-        | Types.Tfield _ -> "Tfield"
-        | Types.Tnil -> "Tnil"
-        | Types.Tsubst _ -> "Tsubst"
-        | Types.Tunivar _ -> "Tunivar"
-        | Types.Tpoly _ -> "Tpoly"
-        | Types.Tpackage _ -> "Tpackage"
-        | _ -> assert false
-      in
-      if debug then Printf.printf "examine_type_expr error case 3 %s\n%!" what;
-      Obj_boxed_traversable
-    | Unboxed _ -> Obj_unboxed
-    end
-  | Types.Tlink type_expr ->
-    (* Should have been eliminated by [Btype.repr]. *)
-    assert false
-
-(* CR mshinwell: Should we use [Ctype.extract_concrete_typedecl]? *)
-and examine_type_decl t ~formatter ~paths_visited_so_far ~type_expr ~env
-      ~path ~args ~type_decl ~scrutinee =
-  let params = type_decl.Types.type_params in
-  if List.length params <> List.length args then begin
-    if debug then Printf.printf "type params/args don't match\n%!";
-    Abstract path  (* fail gracefully *)
-  end else begin
-    match type_decl.Types.type_manifest with
-    | Some type_expr ->
-      examine_type_expr t ~formatter ~paths_visited_so_far ~type_expr ~env
-        ~scrutinee
-    | None ->
-      begin match type_decl.Types.type_kind with
-      | Types.Type_variant cases ->
-        begin match scrutinee with
-        | Boxed _ ->
-          (* CR mshinwell: change this when Tvariant case is filled in above *)
-          let kind = Vk.Non_polymorphic in
-          Non_constant_constructor (path, cases, params, args, env, kind)
-        | Unboxed scrutinee ->
-          let constant_ctors = extract_constant_ctors ~cases in
-          let value = Int64.shift_right scrutinee 1 in (* undo Caml encoding *)
-          if Int64.compare value Int64.zero >= 0
-             && Int64.compare value
-               (Int64.of_int (List.length constant_ctors)) < 0
-          then
-            let ident =
-              try Some (List.assoc value constant_ctors) with Not_found -> None
-            in
-            begin match ident with
-            | Some ident ->
-              Constant_constructor (Ident.name ident, Vk.Non_polymorphic)
-            | None -> Obj_unboxed
-            end
-          else
-            Obj_unboxed
-        end
-      | Types.Type_abstract ->
-        if List.mem path paths_visited_so_far then begin
-          if debug then
-            Printf.printf "loop resolving %s\n%!" (print_path path);
-          Abstract path  (* fail gracefully *)
-        end else
-          let paths_visited_so_far = path::paths_visited_so_far in
-          discover_manifest t ~formatter ~paths_visited_so_far ~type_expr ~path
-            ~args ~env ~scrutinee
-      | Types.Type_record (field_decls, record_repr) ->
-        begin match scrutinee with
-        | Boxed _ ->
-          if List.length field_decls = 1
-            && List.length args = 1
-            && Ident.name ((List.hd field_decls).Types.ld_id) = "contents"
-            && Path.name path = "Pervasives.ref"
-          then
-            Ref (List.hd args, env)
-          else
-            Record (path, params, args, field_decls, record_repr, env)
-        | Unboxed _ ->
-          (* Records should never be unboxed values, but behave gracefully. *)
-          Obj_unboxed
-        end
-      | Types.Type_open -> Open
-      end
-  end
-
-(* CR-soon mshinwell: try removing [type_expr], probably redundant *)
-and discover_manifest t ~formatter ~paths_visited_so_far ~type_expr ~path
-      ~args ~env ~scrutinee =
-  let manifest =
-    Abstraction_breaker.find_manifest_of_abstract_type t.abstraction_breaker
-        ~formatter ~path ~env
-  in
-  match manifest with
-  | None -> Abstract path  (* couldn't find manifest; fail gracefully *)
-  | Some (path, type_decl, env) ->
-    examine_type_decl t ~formatter ~paths_visited_so_far ~type_expr ~env
-      ~path ~args ~type_decl ~scrutinee
 
 module Result = struct
   type t =
@@ -312,13 +101,230 @@ module Result = struct
     | Custom -> "Custom"
 end
 
+type t = {
+  abstraction_breaker : Abstraction_breaker.t;
+  debugger : (module Debugger.S);
+}
+
+let create ~cmt_cache ~debugger =
+  { abstraction_breaker = Abstraction_breaker.create ~cmt_cache;
+    debugger;
+  }
+
+let extract_constant_ctors ~cases =
+  let constant_ctors, _ =
+    List.fold_left cases
+      ~init:([], 0)
+      ~f:(fun (constant_ctors, next_ctor_number) ctor_decl ->
+            let ident = ctor_decl.Types.cd_id in
+            match ctor_decl.Types.cd_args with
+            | Cstr_tuple [] ->
+              (next_ctor_number, ident)::constant_ctors, next_ctor_number + 1
+            | Cstr_tuple _ | Cstr_record _ ->
+              constant_ctors, next_ctor_number)
+  in
+  constant_ctors
+
+let check_predef_paths ~path ~args ~env ~scrutinee : Result.t option =
+  (* CR mshinwell: validate more things (e.g. value size) *)
+  if Path.same path Predef.path_array then
+    match scrutinee with
+    | Unboxed _ -> Some Obj_unboxed_but_should_be_boxed
+    | Boxed _ ->
+      match args with
+      | [arg] -> Some (Array (arg, env))
+      | _ -> Some Obj_boxed_traversable  (* wrong number of arguments *)
+  else if Path.same path Predef.path_list then
+    match args with
+    | [arg] -> Some (List (arg, env))
+    | _ ->
+      match scrutinee with  (* wrong number of arguments *)
+      | Unboxed _ -> Some Obj_unboxed
+      | Boxed _ -> Some Obj_boxed_traversable
+  else if Path.same path Predef.path_int then
+    match scrutinee with
+    | Unboxed _ -> Some Int
+    | Boxed _ -> Some Obj_boxed_traversable  (* should not be boxed *)
+  else if Path.same path Predef.path_char then
+    match scrutinee with
+    | Unboxed _ -> Some Char
+    | Boxed _ -> Some Obj_boxed_traversable  (* should not be boxed *)
+  else
+    None
+
+let rec examine_type_expr t ~formatter ~paths_visited_so_far ~type_expr ~env
+      ~scrutinee : Result.t =
+  let module D = (val t.debugger : Debugger.S) in
+  match (Btype.repr type_expr).Types.desc with
+  | Types.Tconstr (path, args, _abbrev_memo_ref) ->
+    begin match check_predef_paths ~path ~args ~env ~scrutinee with
+    | Some result -> result
+    | None ->
+      if debug then
+         Printf.printf "examine_type_expr: Env.find_type '%s': "
+           (print_path path);
+      begin match try Some (Env.find_type path env) with Not_found -> None with
+      | None ->
+        if debug then Printf.printf "not found.\n%!";
+        (* Even if the type is abstract, the declaration should still be in
+           the environment. *)
+        begin match scrutinee with
+        | Unboxed _ -> Obj_unboxed
+        | Boxed _ ->
+          if debug then
+            Printf.printf "examine_type_expr error case 1, load path is: %s\n%!"
+              (String.concat "," !Config.load_path);
+          Obj_boxed_traversable
+        end
+      | Some type_decl ->
+        if debug then Printf.printf "found.\n%!";
+        examine_type_decl t ~formatter ~paths_visited_so_far ~type_expr ~env
+          ~path ~args ~type_decl ~scrutinee
+      end
+    end
+  | Types.Tvariant row_desc ->
+    begin match scrutinee with
+    | Boxed _ ->
+      (* CR mshinwell: support boxed polymorphic variant constructors *)
+      if debug then Printf.printf "examine_type_expr error case 2\n%!";
+      Obj_boxed_traversable
+    | Unboxed scrutinee ->
+      let ctor_names_and_hashes =
+        let labels = List.map row_desc.Types.row_fields ~f:fst in
+        List.map labels ~f:(fun label -> label, Btype.hash_variant label)
+      in
+      let desired_hash = D.Obj.int scrutinee in
+      let matches =
+        List.filter ctor_names_and_hashes
+          ~f:(fun (_ctor_name, hash) -> hash = desired_hash)
+      in
+      begin match matches with
+      | [(ctor_name, _hash)] ->
+        Constant_constructor (ctor_name, Vk.Polymorphic)
+      | _::_ | [] -> Obj_unboxed  (* cannot find ctor with given hash *)
+      end
+    end
+  | Types.Ttuple component_types ->
+    begin match scrutinee with
+    | Boxed _ -> Tuple (component_types, env)
+    | Unboxed _ -> Obj_unboxed_but_should_be_boxed
+    end
+  | Types.Tarrow _ ->
+    begin match scrutinee with
+    | Boxed _ -> Closure
+    | Unboxed _ -> Obj_unboxed_but_should_be_boxed
+    end
+  | Types.Tvar _
+  | Types.Tobject _ | Types.Tfield _ | Types.Tnil | Types.Tsubst _
+  | Types.Tunivar _ | Types.Tpoly _ | Types.Tpackage _ ->
+    (* CR mshinwell: more work to do here *)
+    begin match scrutinee with
+    | Boxed _ ->
+      let what =
+        match (Btype.repr type_expr).Types.desc with
+        | Types.Tvar _ -> "Tvar"
+        | Types.Tobject _ -> "Tobject"
+        | Types.Tfield _ -> "Tfield"
+        | Types.Tnil -> "Tnil"
+        | Types.Tsubst _ -> "Tsubst"
+        | Types.Tunivar _ -> "Tunivar"
+        | Types.Tpoly _ -> "Tpoly"
+        | Types.Tpackage _ -> "Tpackage"
+        | _ -> assert false
+      in
+      if debug then Printf.printf "examine_type_expr error case 3 %s\n%!" what;
+      Obj_boxed_traversable
+    | Unboxed _ -> Obj_unboxed
+    end
+  | Types.Tlink _type_expr ->
+    (* Should have been eliminated by [Btype.repr]. *)
+    assert false
+
+(* CR mshinwell: Should we use [Ctype.extract_concrete_typedecl]? *)
+and examine_type_decl t ~formatter ~paths_visited_so_far ~type_expr ~env
+      ~path ~args ~type_decl ~scrutinee : Result.t =
+  let module D = (val t.debugger : Debugger.S) in
+  let params = type_decl.Types.type_params in
+  if List.length params <> List.length args then begin
+    if debug then Printf.printf "type params/args don't match\n%!";
+    Abstract path  (* fail gracefully *)
+  end else begin
+    match type_decl.Types.type_manifest with
+    | Some type_expr ->
+      examine_type_expr t ~formatter ~paths_visited_so_far ~type_expr ~env
+        ~scrutinee
+    | None ->
+      begin match type_decl.Types.type_kind with
+      | Types.Type_variant cases ->
+        begin match scrutinee with
+        | Boxed _ ->
+          (* CR mshinwell: change this when Tvariant case is filled in above *)
+          let kind = Vk.Non_polymorphic in
+          Non_constant_constructor (path, cases, params, args, env, kind)
+        | Unboxed scrutinee ->
+          let constant_ctors = extract_constant_ctors ~cases in
+          let value = D.Obj.int scrutinee in
+          if value >= 0 && value < List.length constant_ctors then
+            let ident =
+              try Some (List.assoc value constant_ctors)
+              with Not_found -> None
+            in
+            begin match ident with
+            | Some ident ->
+              Constant_constructor (Ident.name ident, Vk.Non_polymorphic)
+            | None -> Obj_unboxed
+            end
+          else
+            Obj_unboxed
+        end
+      | Types.Type_abstract ->
+        if List.mem path ~set:paths_visited_so_far then begin
+          if debug then
+            Printf.printf "loop resolving %s\n%!" (print_path path);
+          Abstract path  (* fail gracefully *)
+        end else
+          let paths_visited_so_far = path::paths_visited_so_far in
+          discover_manifest t ~formatter ~paths_visited_so_far ~type_expr
+            ~path ~args ~env ~scrutinee
+      | Types.Type_record (field_decls, record_repr) ->
+        begin match scrutinee with
+        | Boxed _ ->
+          if List.length field_decls = 1
+            && List.length args = 1
+            && Ident.name ((List.hd field_decls).Types.ld_id) = "contents"
+            && Path.name path = "Pervasives.ref"
+          then
+            Ref (List.hd args, env)
+          else
+            Record (path, params, args, field_decls, record_repr, env)
+        | Unboxed _ ->
+          (* Records should never be unboxed values, but behave gracefully. *)
+          Obj_unboxed
+        end
+      | Types.Type_open -> Open
+      end
+  end
+
+(* CR-soon mshinwell: try removing [type_expr], probably redundant *)
+and discover_manifest t ~formatter ~paths_visited_so_far ~type_expr ~path
+      ~args ~env ~scrutinee : Result.t =
+  let manifest =
+    Abstraction_breaker.find_manifest_of_abstract_type t.abstraction_breaker
+        ~formatter ~path ~env
+  in
+  match manifest with
+  | None -> Abstract path  (* couldn't find manifest; fail gracefully *)
+  | Some (path, type_decl, env) ->
+    examine_type_decl t ~formatter ~paths_visited_so_far ~type_expr ~env
+      ~path ~args ~type_decl ~scrutinee
+
 let find_type_information t ~formatter ~type_expr_and_env ~scrutinee =
   let module D = (val t.debugger : Debugger.S) in
   if debug then begin
     Printf.printf "find_type_information starting, type info present? %s\n%!"
       (match type_expr_and_env with None -> "no" | Some _ -> "yes")
   end;
-  let result =
+  let result : Result.t =
     if D.Obj.is_int scrutinee then
       match type_expr_and_env with
       | None -> Obj_unboxed
@@ -326,7 +332,7 @@ let find_type_information t ~formatter ~type_expr_and_env ~scrutinee =
         examine_type_expr t ~formatter ~paths_visited_so_far:[] ~type_expr
           ~env ~scrutinee:(Unboxed scrutinee)
     else
-      let tag = D.Obj.tag scrutinee in
+      let tag = D.Obj.tag_exn scrutinee in
       match tag with
       | tag when tag < Obj.lazy_tag ->
         begin match type_expr_and_env with
@@ -337,7 +343,7 @@ let find_type_information t ~formatter ~type_expr_and_env ~scrutinee =
         end
       | tag when tag = Obj.string_tag -> String
       | tag when tag = Obj.double_tag -> Float
-      | tag when (tag = Obj.closure_tag || tag = D.Obj.infix_tag) -> Closure
+      | tag when (tag = Obj.closure_tag || tag = Obj.infix_tag) -> Closure
       | tag when tag = Obj.lazy_tag -> Lazy
       | tag when tag = Obj.object_tag -> Object
       | tag when tag = Obj.forward_tag -> Obj_boxed_traversable
@@ -345,10 +351,10 @@ let find_type_information t ~formatter ~type_expr_and_env ~scrutinee =
       | tag when tag = Obj.custom_tag -> Custom
       | tag when tag = Obj.double_array_tag -> Float_array
       | tag when tag < Obj.no_scan_tag -> Obj_boxed_traversable
-      | tag -> Obj_boxed_not_traversable
+      | _tag -> Obj_boxed_not_traversable
   in
   if debug then begin
     Printf.printf "find_type_information returning %s\n%!"
-      (string_of_result result);
+      (Result.to_string result)
   end;
   result

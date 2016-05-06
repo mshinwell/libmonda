@@ -1,31 +1,31 @@
-(**************************************************************************)
-(*                                                                        *)
-(*                Make OCaml native debugging awesome!                    *)
-(*                                                                        *)
-(*                  Mark Shinwell, Jane Street Europe                     *)
-(*                                                                        *)
-(* Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
-(*                                                                        *)
-(* Permission is hereby granted, free of charge, to any person obtaining  *)
-(* a copy of this software and associated documentation files             *)
-(* (the "Software"), to deal in the Software without restriction,         *)
-(* including without limitation the rights to use, copy, modify, merge,   *)
-(* publish, distribute, sublicense, and/or sell copies of the Software,   *)
-(* and to permit persons to whom the Software is furnished to do so,      *)
-(* subject to the following conditions:                                   *)
-(*                                                                        *)
-(* The above copyright notice and this permission notice shall be         *)
-(* included in all copies or substantial portions of the Software.        *)
-(*                                                                        *)
-(* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        *)
-(* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     *)
-(* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. *)
-(* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   *)
-(* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   *)
-(* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      *)
-(* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 *)
-(*                                                                        *)
-(**************************************************************************)
+(***************************************************************************)
+(*                                                                         *)
+(*                 Make OCaml native debugging awesome!                    *)
+(*                                                                         *)
+(*                   Mark Shinwell, Jane Street Europe                     *)
+(*                                                                         *)
+(*  Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
+(*                                                                         *)
+(*  Permission is hereby granted, free of charge, to any person obtaining  *)
+(*  a copy of this software and associated documentation files             *)
+(*  (the "Software"), to deal in the Software without restriction,         *)
+(*  including without limitation the rights to use, copy, modify, merge,   *)
+(*  publish, distribute, sublicense, and/or sell copies of the Software,   *)
+(*  and to permit persons to whom the Software is furnished to do so,      *)
+(*  subject to the following conditions:                                   *)
+(*                                                                         *)
+(*  The above copyright notice and this permission notice shall be         *)
+(*  included in all copies or substantial portions of the Software.        *)
+(*                                                                         *)
+(*  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        *)
+(*  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     *)
+(*  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. *)
+(*  IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   *)
+(*  CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   *)
+(*  TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      *)
+(*  SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 *)
+(*                                                                         *)
+(***************************************************************************)
 
 (** Extraction of type information using data from the heap and .cmt files. *)
 
@@ -40,7 +40,7 @@
 type t
 
 val create
-   : search_path:(unit -> string list)
+   : cmt_cache:Cmt_cache.t
   -> debugger:(module Debugger.S)
   -> t
 
@@ -93,5 +93,5 @@ val find_type_information
    : t
   -> formatter:Format.formatter
   -> type_expr_and_env:(Types.type_expr * Env.t) option
-  -> scrutinee:Debugger.Obj.t
+  -> scrutinee:Debugger.obj
   -> Result.t

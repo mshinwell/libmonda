@@ -40,6 +40,13 @@ module LocTable = Map.Make (struct
     if start = 0 then compare (cnum x) (cnum y) else start
 end)
 
+module List = ListLabels
+
+module String = struct
+  include String
+  module Map = Map.Make (String)
+end
+
 type t = {
   cmi_infos : Cmi_format.cmi_infos option;
   cmt_infos : Cmt_format.cmt_infos option;
@@ -110,6 +117,7 @@ and process_expression ~exp ((idents_to_types, app_points) as init) =
   | Texp_function (_label, cases, _partial) ->
     process_cases ~cases init
   | Texp_apply (exp, args) ->
+(*
     (* CR mshinwell: what happens when [exp] has already been partially
        applied? *)
     let app_points =
@@ -122,8 +130,9 @@ and process_expression ~exp ((idents_to_types, app_points) as init) =
       in
       LocTable.add (exp.exp_loc) (lst, exp.exp_env) app_points
     in
+*)
     let init = process_expression ~exp (idents_to_types, app_points) in
-    List.fold_left args ~init ~f:(fun acc (_label, expr_opt, _optional) ->
+    List.fold_left args ~init ~f:(fun acc (_label, expr_opt) ->
       match expr_opt with
       | None -> acc
       | Some exp -> process_expression ~exp acc
@@ -196,7 +205,10 @@ and process_expression ~exp ((idents_to_types, app_points) as init) =
   | Texp_setinstvar _
   | Texp_override _
   | Texp_object _
-  | Texp_pack _ -> idents_to_types, app_points
+  | Texp_pack _
+  | Texp_unreachable
+  | Texp_letexception _
+  | Texp_extension_constructor _ -> idents_to_types, app_points
 
 and process_cases ~cases init =
   List.fold_left cases ~init ~f:(fun acc case ->

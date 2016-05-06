@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2015--2016 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -27,22 +27,30 @@
 (*                                                                         *)
 (***************************************************************************)
 
-let is_currying_wrapper name =
-  (* CR mshinwell: share names with compilerlibs directly *)
-  let curry = "caml_curry" in
-  let tuplify = "caml_tuplify" in
-  (* CR mshinwell: this could maybe be made more precise *)
-  String.sub name 0 (String.length curry) = curry
-    || String.sub name 0 (String.length tuplify) = tuplify
+(* CR mshinwell: think about how the search path stuff should work.  We
+   also need it in Value_printer. *)
+let cmt_cache =
+  Cmt_cache.create ~search_path:(fun () -> [])
 
-type custom_block_identifier =
-  | Bigarray
-  | Systhreads_mutex
-  | Systhreads_condition
-  | Unknown
+let value_printer =
+  Value_printer.create ~debugger:(module Gdb_debugger : Debugger.S)
+    ~cmt_cache
 
-let examine_custom_block_identifier = function
-  | "_bigarray" -> Bigarray
-  | "_mutex" -> Systhreads_mutex
-  | "_condition" -> Systhreads_condition
-  | _ -> Unknown
+let print_value ~addr ~(stream : Gdb_debugger.stream) ~dwarf_type ~summary
+      ~max_depth ~cmt_file_search_path:_ =
+  (* Care: [stream] is a naked pointer. *)
+  Value_printer.print value_printer
+    ~addr
+    ~formatter:(Gdb_debugger.formatter stream)
+    ~dwarf_type
+    ~summary
+    ~max_depth
+    ~cmt_file_search_path:[]
+
+let demangle ~mangled_name =
+  (* CR mshinwell: this needs revisiting. *)
+  Some mangled_name
+
+let () =
+  Callback.register "From_gdb_ocaml.print_value" print_value;
+  Callback.register "From_gdb_ocaml.demangle" demangle

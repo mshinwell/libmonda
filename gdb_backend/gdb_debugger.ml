@@ -1,31 +1,31 @@
-(**************************************************************************)
-(*                                                                        *)
-(*                Make OCaml native debugging awesome!                    *)
-(*                                                                        *)
-(*                  Mark Shinwell, Jane Street Europe                     *)
-(*                                                                        *)
-(* Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
-(*                                                                        *)
-(* Permission is hereby granted, free of charge, to any person obtaining  *)
-(* a copy of this software and associated documentation files             *)
-(* (the "Software"), to deal in the Software without restriction,         *)
-(* including without limitation the rights to use, copy, modify, merge,   *)
-(* publish, distribute, sublicense, and/or sell copies of the Software,   *)
-(* and to permit persons to whom the Software is furnished to do so,      *)
-(* subject to the following conditions:                                   *)
-(*                                                                        *)
-(* The above copyright notice and this permission notice shall be         *)
-(* included in all copies or substantial portions of the Software.        *)
-(*                                                                        *)
-(* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        *)
-(* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     *)
-(* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. *)
-(* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   *)
-(* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   *)
-(* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      *)
-(* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 *)
-(*                                                                        *)
-(**************************************************************************)
+(***************************************************************************)
+(*                                                                         *)
+(*                 Make OCaml native debugging awesome!                    *)
+(*                                                                         *)
+(*                   Mark Shinwell, Jane Street Europe                     *)
+(*                                                                         *)
+(*  Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
+(*                                                                         *)
+(*  Permission is hereby granted, free of charge, to any person obtaining  *)
+(*  a copy of this software and associated documentation files             *)
+(*  (the "Software"), to deal in the Software without restriction,         *)
+(*  including without limitation the rights to use, copy, modify, merge,   *)
+(*  publish, distribute, sublicense, and/or sell copies of the Software,   *)
+(*  and to permit persons to whom the Software is furnished to do so,      *)
+(*  subject to the following conditions:                                   *)
+(*                                                                         *)
+(*  The above copyright notice and this permission notice shall be         *)
+(*  included in all copies or substantial portions of the Software.        *)
+(*                                                                         *)
+(*  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        *)
+(*  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     *)
+(*  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. *)
+(*  IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   *)
+(*  CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   *)
+(*  TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      *)
+(*  SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 *)
+(*                                                                         *)
+(***************************************************************************)
 
 type obj = nativeint
 type target_addr = nativeint
@@ -112,6 +112,14 @@ end = struct
       if line < 1 then None else Some line
   end
 
+  external find_pc_partial_function
+     : addr:(target_addr [@unboxed])
+    -> function_name:int ref
+    -> func_start:int ref
+    -> fun_end:int ref
+    -> (int [@unboxed])
+    = "find_pc_partial_function" "noalloc"
+
   external find_pc_line
      : addr:(target_addr [@unboxed])
     -> use_previous_line_number_if_on_boundary:(bool [@unboxed])
@@ -168,6 +176,8 @@ module Target = struct
   let read_value_exn ?(offset_in_words = 0) addr =
     read_int64 Value.(add addr (of_int (Arch.size_addr * offset_in_words)))
 
+  let read_addr_exn = read_value_exn
+
   let read_double_exn addr =
     read_memory_exn addr priv_buf 8;
     copy_double priv_buf
@@ -223,10 +233,30 @@ module Obj = struct
     String.sub buf 0 size
 end
 
+let symbol_at_pc pc =
+  let function_name = ref 0 in
+  let func_start = ref 0 in
+  let func_end = ref 0 in
+  let result =
+    Gdb.find_pc_partial_function ~addr:pc ~function_name
+      ~func_start ~func_end
+  in
+  if result = 0 then None
+  else caml_copy_string !function_name
+
+let filename_and_line_number_of_pc addr
+      ~use_previous_line_number_if_on_boundary =
+  let symtab_and_line =
+    Gdb.find_pc_line ~addr ~use_previous_line_number_if_on_boundary
+  in
+  match Symtab_and_line.symtab with
+  | None -> None
+  | Some symtab -> Symtab.filename symtab, Symtab_and_line.line
+
 let compilation_directories_for_source_file =
   Gdb_indirect.compilation_directories_for_source_file
 
-let formatter stream =
+let formatter (stream : stream) =
   Format.make_formatter (fun str pos len ->
       Gdb.Ui_file.print_filtered stream (String.sub str pos len))
     (fun () -> ())
