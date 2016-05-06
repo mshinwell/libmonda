@@ -48,10 +48,10 @@ OCAMLOPT=ocamlopt -verbose -I +compiler-libs -I ./src \
   -ccopt -I$(GDB_ROOT)/gdb/build-gnulib/import
 
 GDB_BACKEND=gdb_backend/from_gdb.c \
-  gdb_backend/from_gdb_ocaml.ml \
   gdb_backend/to_gdb.c \
   gdb_backend/gdb_debugger.mli \
   gdb_backend/gdb_debugger.ml \
+  gdb_backend/from_gdb_ocaml.ml
 
 SRC=src/monda_debug.ml \
     src/cmt_cache.mli \

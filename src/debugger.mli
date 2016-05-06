@@ -41,9 +41,6 @@ type obj
 (** An address on the target. *)
 type target_addr
 
-(** Used for printing on the debugger's terminal. *)
-type stream
-
 module type S = sig
   (** Raised when any of the [Obj] or [Target_memory] functions fail to read
       memory. *)
@@ -141,6 +138,8 @@ module type S = sig
   val compilation_directories_for_source_file
      : source_filename:string
     -> string list
+
+  type stream
 
   (** A formatter that prints to the debugger terminal for user feedback. *)
   val formatter : stream -> Format.formatter

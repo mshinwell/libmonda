@@ -32,5 +32,5 @@
     OCaml implementations of those are in from_gdb_ocaml.ml and the
     C implementations in from_gdb.c. *)
 
-include Debugger_intf.S
+include Debugger.S
   with type stream = private int

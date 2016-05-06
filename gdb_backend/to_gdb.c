@@ -31,6 +31,7 @@
 #include <caml/alloc.h>
 #include <caml/mlvalues.h>
 
+#include "defs.h"
 #include "symtab.h"
 
 static int
@@ -40,10 +41,10 @@ compilation_directories_for_source_file_callback(struct symtab* symtab,
   CAMLparam0();
   CAMLlocal1(v_dirname);
 
-  if (symtab->dirname) {
+  if (symtab->compunit_symtab->dirname) {
     value v_list_cell;
 
-    v_dirname = caml_copy_string(symtab->dirname);
+    v_dirname = caml_copy_string(symtab->compunit_symtab->dirname);
 
     v_list_cell = caml_alloc_small(2, 0);
     Field(v_list_cell, 0) = v_dirname;
