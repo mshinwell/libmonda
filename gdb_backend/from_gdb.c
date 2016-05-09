@@ -129,7 +129,9 @@ monda_set_search_path(char *new_search_path)
   if (search_path) {
     free(search_path);
   }
-  search_path = strdup(new_search_path);
+  if (new_search_path) {
+    search_path = strdup(new_search_path);
+  }
 }
 
 /*
