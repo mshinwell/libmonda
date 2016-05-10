@@ -513,7 +513,7 @@ module Make (D : Debugger.S) = struct
     let cmt_file_and_ident_name =
       match Name_laundry.split_base_type_die_name dwarf_type with
       | None -> None
-      | Some { output_path; ident_name; } ->
+      | Some { output_path; ident_name; ident_stamp; } ->
         let output_dir = Filename.dirname output_path in
         let source_file = Filename.basename output_path in
         let cmt_leafname =
@@ -523,7 +523,7 @@ module Make (D : Debugger.S) = struct
         in
         let first_try = output_dir ^ Filename.dir_sep ^ cmt_leafname in
         if Sys.file_exists first_try then begin
-          Some (Cmt_file.load ~filename:first_try, ident_name)
+          Some (Cmt_file.load ~filename:first_try, ident_name, ident_stamp)
         end else begin
           (* CR mshinwell: search the path here *)
           None
@@ -532,8 +532,11 @@ module Make (D : Debugger.S) = struct
     let type_of_ident =
       match cmt_file_and_ident_name with
       | None -> None
-      | Some (cmt_file, ident_name) ->
-        Cmt_file.type_of_ident cmt_file ~unique_name:ident_name
+      | Some (cmt_file, ident_name, ident_stamp) ->
+        (* CR-soon mshinwell: fix [Cmt_file] to just take the integer
+           stamp and the name *)
+        let unique_name = Printf.sprintf "%s_%d" ident_name ident_stamp in
+        Cmt_file.type_of_ident cmt_file ~unique_name
     in
     if debug then Printf.printf "Value_printer.print entry point\n%!";
     Format.fprintf formatter "@[";

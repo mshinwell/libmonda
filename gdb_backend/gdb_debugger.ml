@@ -153,16 +153,6 @@ module Target_memory = struct
 
   let priv_buf = Bytes.create 8
 
-(* 
-  let read_int32_exn addr =
-    read_exn addr priv_buf 4;
-    copy_int32 priv_buf
-
-  let read_int64_exn addr =
-    read_exn addr priv_buf 8;
-    copy_int64 priv_buf
-*)
-
   let read_value_exn ?(offset_in_words = 0) addr =
     let addr =
       Nativeint.(add addr (of_int (Arch.size_addr * offset_in_words)))
