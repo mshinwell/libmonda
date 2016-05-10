@@ -516,7 +516,11 @@ module Make (D : Debugger.S) = struct
       | Some { output_path; ident_name; } ->
         let output_dir = Filename.dirname output_path in
         let source_file = Filename.basename output_path in
-        let cmt_leafname = (Filename.chop_extension source_file) ^ ".cmt" in
+        let cmt_leafname =
+          match Filename.chop_extension source_file with
+          | basename -> basename ^ ".cmt"
+          | exception (Invalid_argument _) -> source_file
+        in
         let first_try = output_dir ^ Filename.dir_sep ^ cmt_leafname in
         if Sys.file_exists first_try then begin
           Some (Cmt_file.load ~filename:first_try, ident_name)

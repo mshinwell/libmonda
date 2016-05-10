@@ -33,4 +33,3 @@
     C implementations in from_gdb.c. *)
 
 include Debugger.S
-  with type stream = private int

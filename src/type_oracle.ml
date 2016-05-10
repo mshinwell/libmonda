@@ -328,6 +328,9 @@ module Make (D : Debugger.S) = struct
           examine_type_expr t ~formatter ~paths_visited_so_far:[] ~type_expr
             ~env ~scrutinee:(Unboxed scrutinee)
       else
+        (* CR mshinwell: this is an example of a place we may get a
+           Read_error.  Perhaps D.Obj.tag_exn and so on should return options.
+        *)
         let tag = D.Obj.tag_exn scrutinee in
         match tag with
         | tag when tag < Obj.lazy_tag ->

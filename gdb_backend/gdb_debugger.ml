@@ -63,7 +63,7 @@ module Gdb : sig
     -> int
 
   module Ui_file : sig
-    type t = private int
+    type t
 
     val print_filtered : t -> string -> unit
   end
@@ -81,12 +81,6 @@ module Gdb : sig
     -> use_previous_line_number_if_on_boundary:int
     -> (string * (int option)) option
 end = struct
-  (* Type "int" is used to conceal naked pointers from the GC. *)
-
-  external int_as_pointer : int -> 'a = "%int_as_pointer"
-
-  let null : int = int_as_pointer 0
-
   external target_read_memory
      : addr:(target_addr [@unboxed])
     -> buf:Bytes.t
@@ -95,15 +89,16 @@ end = struct
     = "_native_only" "target_read_memory" [@@noalloc]
 
   module Ui_file = struct
-    type t = int
+    type t = private Int64.t
 
-    external print_filtered : t -> format_str:string -> string -> unit
-      = "fprintf_filtered" [@@noalloc]
+    external fputs_filtered
+       : string
+      -> (t [@unboxed])
+      -> unit
+      = "_native_only" "fputs_filtered" [@@noalloc]
 
     let print_filtered t text =
-Printf.printf "Printing '%s'\n%!" text;
-      print_filtered t "%s" text;
-Printf.printf "Printing '%s' done\n%!" text
+      fputs_filtered text t
   end
 
   external find_pc_partial_function
@@ -172,7 +167,6 @@ module Target_memory = struct
     let addr =
       Nativeint.(add addr (of_int (Arch.size_addr * offset_in_words)))
     in
-Printf.eprintf "TM.read_value_exn 0x%nx\n%!" addr;
     read_exn addr priv_buf Arch.size_addr;
     copy_nativeint priv_buf
 
@@ -203,11 +197,7 @@ module Obj = struct
   
   let field_exn t i =
     assert (i >= (-1));
-    Printf.eprintf "Gdb_debugger.Obj.field_exn, addr 0x%nx field %d\n%!" t i;
-    let result =
     Target_memory.read_value_exn t ~offset_in_words:i
-    in
-    Printf.eprintf "...returns 0x%nx\n%!" result; result
 
   let field_as_addr_exn = field_exn
 

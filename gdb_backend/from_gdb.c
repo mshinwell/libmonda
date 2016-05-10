@@ -58,7 +58,6 @@ monda_init (void)
   char* argv[2];
   argv[0] = "--";
   argv[1] = NULL;
-  fprintf(stderr, "monda_init\n");
   caml_startup (argv);
   return 1;
 }
@@ -70,7 +69,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
                  const struct value_print_options* options, int depth)
 {
   CAMLparam0();
-  CAMLlocal3(v_type, v_value, v_search_path);
+  CAMLlocal4(v_type, v_stream, v_value, v_search_path);
   CAMLlocalN(args, 6);
   static value* callback = NULL;
 
@@ -80,18 +79,19 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   }
 
   v_value = caml_copy_nativeint(*(intnat*) valaddr);
-fprintf(stderr, "monda_val_print.  valaddr=%p *valaddr=%p\n",
-  (void*) valaddr, *(void**) valaddr);
+/*fprintf(stderr, "monda_val_print.  valaddr=%p *valaddr=%p\n",
+  (void*) valaddr, *(void**) valaddr);*/
 
   if (TYPE_NAME(type) == NULL) {
     goto print_as_c;
   }
 
   v_type = caml_copy_string(TYPE_NAME(type));
+  v_stream = caml_copy_int64((uint64_t) stream);
   v_search_path = caml_copy_string(search_path ? search_path : "");
 
   Store_field(args, 0, v_value);
-  Store_field(args, 1, (value) stream);
+  Store_field(args, 1, v_stream);
   Store_field(args, 2, v_type);
   Store_field(args, 3, Val_bool(options->summary));
   Store_field(args, 4, Val_long(value_printer_max_depth));
