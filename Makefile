@@ -31,15 +31,15 @@
 # by adding "-fPIC" to asmrun/Makefile and configuring thus:
 #   ./configure -prefix ... -cc "gcc -fPIC" -aspp "gcc -c -fPIC"
 
-#GDB_ROOT=/mnt/local/sda1/mshinwell/mshinwell-gdb
-GDB_ROOT=/home/mark/dev/mshinwell-gdb
+GDB_ROOT=/mnt/local/sda1/mshinwell/mshinwell-gdb
+#GDB_ROOT=/home/mark/dev/mshinwell-gdb
 
 OCAML_ROOT=`ocamlopt -where`
 
 OCAMLOPT=ocamlopt -verbose -I +compiler-libs -I ./src -g -fPIC \
   -I ./gdb_backend
 
-CC=gcc -fPIC -g \
+CC=gcc -O0 -fPIC -g \
   -I$(OCAML_ROOT) \
   -I$(GDB_ROOT)/gdb \
   -I$(GDB_ROOT)/gdb/common \
@@ -73,7 +73,7 @@ LIBMONDA_GDB=libmonda_gdb.so
 all: $(GDB_BACKEND) $(SRC)
 	$(CC) -c -o gdb_backend/to_gdb.o gdb_backend/to_gdb.c
 	$(CC) -c -o gdb_backend/from_gdb.o gdb_backend/from_gdb.c
-	$(OCAMLOPT) -output-obj -o $(LIBMONDA_GDB) \
+	$(OCAMLOPT) -output-obj -g -o $(LIBMONDA_GDB) \
 	  ocamlcommon.cmxa ocamloptcomp.cmxa dynlink.cmxa bigarray.cmxa \
 	  $(SRC) $(GDB_BACKEND) gdb_backend/to_gdb.o \
           gdb_backend/from_gdb.o

@@ -39,13 +39,20 @@ let value_printer = Our_value_printer.create ~cmt_cache
 let print_value ~addr ~(stream : Gdb_debugger.stream) ~dwarf_type ~summary
       ~max_depth ~cmt_file_search_path:_ =
   (* Care: [stream] is a naked pointer. *)
-  Our_value_printer.print value_printer
-    ~scrutinee:addr
-    ~formatter:(Gdb_debugger.formatter stream)
-    ~dwarf_type
-    ~summary
-    ~max_depth
-    ~cmt_file_search_path:[]
+  (* When doing e.g. "inf reg", gdb passes "int64_t" as the type to print
+     at.  Since we can't yet print out-of-heap values etc, don't try to
+     be fancy here. *)
+  match Name_laundry.split_base_type_die_name dwarf_type with
+  | None -> false
+  | Some _ ->
+    Our_value_printer.print value_printer
+      ~scrutinee:addr
+      ~formatter:(Gdb_debugger.formatter stream)
+      ~dwarf_type
+      ~summary
+      ~max_depth
+      ~cmt_file_search_path:[];
+    true
 
 let demangle ~mangled_name =
   (* CR mshinwell: this needs revisiting. *)

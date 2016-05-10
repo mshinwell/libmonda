@@ -45,6 +45,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <stdio.h>
 
 extern value caml_make_vect (value, value);
 /* These are initialized by way of [_initialize_ocaml_language]. */
@@ -57,6 +58,7 @@ monda_init (void)
   char* argv[2];
   argv[0] = "--";
   argv[1] = NULL;
+  fprintf(stderr, "monda_init\n");
   caml_startup (argv);
   return 1;
 }
@@ -68,7 +70,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
                  const struct value_print_options* options, int depth)
 {
   CAMLparam0();
-  CAMLlocal4(v_type, v_stream, v_value, v_search_path);
+  CAMLlocal3(v_type, v_value, v_search_path);
   CAMLlocalN(args, 6);
   static value* callback = NULL;
 
@@ -78,17 +80,28 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   }
 
   v_value = caml_copy_nativeint(*(intnat*) valaddr);
+fprintf(stderr, "monda_val_print.  valaddr=%p *valaddr=%p\n",
+  (void*) valaddr, *(void**) valaddr);
+
+  if (TYPE_NAME(type) == NULL) {
+    goto print_as_c;
+  }
+
   v_type = caml_copy_string(TYPE_NAME(type));
-  v_search_path = caml_copy_string(search_path);
+  v_search_path = caml_copy_string(search_path ? search_path : "");
 
   Store_field(args, 0, v_value);
-  Store_field(args, 1, v_stream);
+  Store_field(args, 1, (value) stream);
   Store_field(args, 2, v_type);
   Store_field(args, 3, Val_bool(options->summary));
   Store_field(args, 4, Val_long(value_printer_max_depth));
   Store_field(args, 5, v_search_path);
 
-  (void) caml_callbackN(*callback, 6, args);
+  if (caml_callbackN(*callback, 6, args) == Val_false) {
+print_as_c:
+    c_val_print(type, valaddr, embedded_offset, address, stream, recurse,
+      val, options, depth);
+  }
 
   CAMLreturn0;
 }

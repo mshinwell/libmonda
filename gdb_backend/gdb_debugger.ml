@@ -68,19 +68,6 @@ module Gdb : sig
     val print_filtered : t -> string -> unit
   end
 
-  module Symtab : sig
-    type t = private int
-
-    val filename : t -> string
-  end
-
-  module Symtab_and_line : sig
-    type t = private int
-
-    val symtab : t -> Symtab.t option
-    val line : t -> int option
-  end
-
   (* CR-soon mshinwell: improve this dubious interface *)
   val find_pc_partial_function
      : addr:target_addr
@@ -92,7 +79,7 @@ module Gdb : sig
   val find_pc_line
      : addr:target_addr
     -> use_previous_line_number_if_on_boundary:int
-    -> Symtab_and_line.t
+    -> (string * (int option)) option
 end = struct
   (* Type "int" is used to conceal naked pointers from the GC. *)
 
@@ -114,27 +101,9 @@ end = struct
       = "fprintf_filtered" [@@noalloc]
 
     let print_filtered t text =
-      print_filtered t "%s" text
-  end
-
-  module Symtab = struct
-    type t = int
-
-    let filename t : string =
-      caml_copy_string ~addr:(((Obj.magic t) : int array).(3))
-  end
-
-  module Symtab_and_line = struct
-    type t = int
-
-    let symtab t : Symtab.t option =
-      let symtab = ((Obj.magic t) : int array).(1) in
-      if symtab == null then None
-      else Some symtab
-
-    let line t : int option =
-      let line = ((Obj.magic t) : int array).(3) * 2 in
-      if line < 1 then None else Some line
+Printf.printf "Printing '%s'\n%!" text;
+      print_filtered t "%s" text;
+Printf.printf "Printing '%s' done\n%!" text
   end
 
   external find_pc_partial_function
@@ -148,8 +117,8 @@ end = struct
   external find_pc_line
      : addr:(target_addr [@unboxed])
     -> use_previous_line_number_if_on_boundary:(int [@untagged])
-    -> Symtab_and_line.t
-    = "_native_only" "find_pc_line" [@@noalloc]
+    -> (string * (int option)) option
+    = "_native_only" "monda_find_pc_line"
 end
 
 module Gdb_indirect = struct
@@ -203,6 +172,7 @@ module Target_memory = struct
     let addr =
       Nativeint.(add addr (of_int (Arch.size_addr * offset_in_words)))
     in
+Printf.eprintf "TM.read_value_exn 0x%nx\n%!" addr;
     read_exn addr priv_buf Arch.size_addr;
     copy_nativeint priv_buf
 
@@ -232,7 +202,12 @@ module Obj = struct
   let is_block x = not (is_int x || is_unaligned x)
   
   let field_exn t i =
+    assert (i >= (-1));
+    Printf.eprintf "Gdb_debugger.Obj.field_exn, addr 0x%nx field %d\n%!" t i;
+    let result =
     Target_memory.read_value_exn t ~offset_in_words:i
+    in
+    Printf.eprintf "...returns 0x%nx\n%!" result; result
 
   let field_as_addr_exn = field_exn
 
@@ -292,16 +267,9 @@ let symbol_at_pc pc =
 
 let filename_and_line_number_of_pc addr
       ~use_previous_line_number_if_on_boundary =
-  let symtab_and_line =
-    Gdb.find_pc_line ~addr
-      ~use_previous_line_number_if_on_boundary:
-        (if use_previous_line_number_if_on_boundary then 1 else 0)
-  in
-  match Gdb.Symtab_and_line.symtab symtab_and_line with
-  | None -> None
-  | Some symtab ->
-    Some (Gdb.Symtab.filename symtab,
-      Gdb.Symtab_and_line.line symtab_and_line)
+  Gdb.find_pc_line ~addr
+    ~use_previous_line_number_if_on_boundary:
+      (if use_previous_line_number_if_on_boundary then 1 else 0)
 
 let compilation_directories_for_source_file =
   Gdb_indirect.compilation_directories_for_source_file

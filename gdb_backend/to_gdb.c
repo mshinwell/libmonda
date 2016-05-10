@@ -3,6 +3,7 @@
 /*                Make OCaml native debugging awesome!                    */
 /*                                                                        */
 /*                  Mark Shinwell, Jane Street Europe                     */
+/*                  with assistance from Frederic Bour                    */
 /*                                                                        */
 /* Copyright (c) 2013--2016 Jane Street Group, LLC                        */
 /*                                                                        */
@@ -68,4 +69,38 @@ monda_compilation_directories_for_source_file(value v_file)
     &v_directories_list);  /* take the address since we may cause a GC */
 
   CAMLreturn(v_directories_list);
+}
+
+CAMLprim value
+monda_find_pc_line (CORE_ADDR addr, int not_current)
+{
+  CAMLparam0();
+  value result;
+  CAMLlocal3(v_line, v_filename, v_filename_and_line);
+
+  struct symtab_and_line sal;
+  sal = find_pc_line(addr, not_current);
+
+  if (!sal.symtab) {
+    CAMLreturn(Val_long(0) /* None */);
+  }
+
+  v_filename = caml_copy_string(sal.symtab->filename);
+
+  if (sal.line != 0) {
+    v_line = caml_alloc_small(1, 0);
+    Field(v_line, 0) = Val_long(sal.line);
+  }
+  else {
+    v_line = Val_unit;
+  }
+
+  v_filename_and_line = caml_alloc_small(2, 0);
+  Field(v_filename_and_line, 0) = v_filename;
+  Field(v_filename_and_line, 1) = v_line;
+
+  result = caml_alloc_small(1, 0 /* Some */);
+  Field(result, 0) = v_filename_and_line;
+
+  CAMLreturn(result);
 }

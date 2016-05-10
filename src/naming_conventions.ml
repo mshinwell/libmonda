@@ -28,12 +28,15 @@
 (***************************************************************************)
 
 let is_currying_wrapper name =
-  (* CR mshinwell: share names with compilerlibs directly *)
+  (* CR mshinwell: share names with compilerlibs directly.
+     Also add Misc.Stdlib.String.is_prefix *)
   let curry = "caml_curry" in
   let tuplify = "caml_tuplify" in
+  let curry_length = min (String.length name) (String.length curry) in
+  let tuplify_length = min (String.length name) (String.length tuplify) in
   (* CR mshinwell: this could maybe be made more precise *)
-  String.sub name 0 (String.length curry) = curry
-    || String.sub name 0 (String.length tuplify) = tuplify
+  String.sub name 0 curry_length = curry
+    || String.sub name 0 tuplify_length = tuplify
 
 type custom_block_identifier =
   | Bigarray
