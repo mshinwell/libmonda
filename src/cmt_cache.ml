@@ -27,47 +27,51 @@
 (*                                                                        *)
 (**************************************************************************)
 
-type cmt = Cmi_format.cmi_infos option * Cmt_format.cmt_infos option
-
 type t = {
-  search_path : (unit -> string list);
-  mutable most_recent_search_path : string list option;
-  cache : (string, cmt) Hashtbl.t;
+  mutable primary_search_path : string list;
+  mutable secondary_search_path : string list;
+  cache : (string, Cmt_file.t) Hashtbl.t;
 }
 
-let create ~search_path =
-  { search_path;
-    most_recent_search_path = None;
+let create () =
+  { primary_search_path = [];
+    secondary_search_path = [];
     cache = Hashtbl.create 42;
   }
 
-(* Since we don't yet check digests of .cmt files, we flush the cache
-   whenever the search path is changed. *)
-let check_for_search_path_updates t =
-  let current_search_path = (t.search_path) () in
-  let should_flush =
-    match t.most_recent_search_path with
-    | None -> true
-    | Some most_recent_search_path ->
-      current_search_path <> most_recent_search_path
-  in
-  if should_flush then begin
-    Hashtbl.clear t.cache;
-    t.most_recent_search_path <- Some current_search_path
-  end
+(* CR mshinwell: check digests of .cmt files *)
 
-let read t ~unit_name =
-  check_for_search_path_updates t;
-  try Some (Hashtbl.find t.cache unit_name)
+let clear_search_paths t =
+  t.primary_search_path <- [];
+  t.secondary_search_path <- []
+
+let set_primary_search_path t search_path =
+  t.primary_search_path <- search_path
+
+let set_secondary_search_path t search_path =
+  t.secondary_search_path <- search_path
+
+let get_primary_search_path t = t.primary_search_path
+
+let search_path t = t.primary_search_path @ t.secondary_search_path
+
+let load ?expected_in_directory t ~leafname =
+  try Some (Hashtbl.find t.cache leafname)
   with Not_found ->
-    match t.most_recent_search_path with
-    | None -> assert false
-    | Some search_path ->
-      match Misc.find_in_path_uncap search_path (unit_name ^ ".cmt") with
-      | exception Not_found -> None
-      | pathname ->
-        match Cmt_format.read pathname with
-        | exception _exn -> None  (* CR mshinwell: improve error reporting *)
-        | cmt ->
-          Hashtbl.add t.cache unit_name cmt;
-          Some cmt
+    let search_path =
+      match expected_in_directory with
+      | None -> search_path t
+      | Some expected_in_directory ->
+        expected_in_directory :: (search_path t)
+    in
+    match Misc.find_in_path_uncap search_path leafname with
+    | exception Not_found -> None
+    | pathname ->
+      match
+        Cmt_file.load ~pathname
+          ~primary_search_path_for_dependencies:t.primary_search_path
+      with
+      | None -> None
+      | Some cmt ->
+        Hashtbl.add t.cache leafname cmt;
+        Some cmt

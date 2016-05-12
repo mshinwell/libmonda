@@ -29,9 +29,17 @@
 
 type t
 
-val create : search_path:(unit -> string list) -> t
+val create : unit -> t
 
-val read
-   : t
-  -> unit_name:string
-  -> (Cmi_format.cmi_infos option * Cmt_format.cmt_infos option) option
+val clear_search_paths : t -> unit
+
+val set_primary_search_path : t -> string list -> unit
+val set_secondary_search_path : t -> string list -> unit
+
+val get_primary_search_path : t -> string list
+
+val load
+   : ?expected_in_directory:string
+  -> t
+  -> leafname:string
+  -> Cmt_file.t option

@@ -260,3 +260,8 @@ let formatter (stream : stream) =
   Format.make_formatter (fun str pos len ->
       Gdb.Ui_file.print_filtered stream (String.sub str pos len))
     (fun () -> ())
+
+(* CR-someday mshinwell: Things to add:
+  - GC-safe watchpoints
+  - resurrect old code for compile+run
+*)

@@ -51,44 +51,51 @@ let rec find_module_binding t ~dir_prefix ~path ~is_toplevel ~env =
   | Path.Pident ident ->
     let unit_name = Ident.name ident in
     if debug then Printf.printf "trying to read cmt for %s\n%!" unit_name;
-    let cmt = Cmt_cache.read t.cmt_cache ~unit_name:unit_name in
-    if debug then Printf.printf "Cmt_cache.read finished\n%!";
+    let leafname = (String.lowercase_ascii unit_name) ^ ".cmt" in
+    let cmt = Cmt_cache.load t.cmt_cache ~leafname in
+    if debug then Printf.printf "Cmt_cache.load finished\n%!";
     begin match cmt with
-    | Some (_cmi_infos_opt, Some cmt) ->
-      if debug then Printf.printf "cmt read was successful\n%!";
-      begin match cmt.Cmt_format.cmt_annots with
-      | Cmt_format.Implementation structure ->
-        let mod_binding =
-          { T.
-            mb_id = ident;
-            mb_name = Location.mkloc (Ident.name ident) Location.none;
-            mb_expr =
-              { T.
-                mod_desc = T.Tmod_structure structure;
-                mod_loc = Location.none;
-                mod_type = Types.Mty_ident path;  (* bogus, but unused *)
-                mod_env = env;  (* likewise *)
-                mod_attributes = [];
-              };
-            mb_attributes = [];
-            mb_loc = Location.none;
-          }
-        in
-        `Found_module mod_binding
-      | Cmt_format.Packed (signature, _) ->
-        (* We look for all .cmt files in the same directory at the moment.  Of
-           course, with packing, there may be name clashes.  Perhaps we can
-           avoid those by not supporting packing in the future. *)
-        `Found_pack ident
-      | Cmt_format.Interface _
-      | Cmt_format.Partial_implementation _
-      | Cmt_format.Partial_interface _ ->
-        (* CR mshinwell: no idea what to do with these *)
+    | None ->
+      if debug then Printf.printf "cmt read failed\n%!";
+      `Not_found
+    | Some cmt ->
+      begin match Cmt_file.cmt_infos cmt with
+      | Some cmt ->
+        if debug then Printf.printf "cmt read was successful\n%!";
+        begin match cmt.Cmt_format.cmt_annots with
+        | Cmt_format.Implementation structure ->
+          let mod_binding =
+            { T.
+              mb_id = ident;
+              mb_name = Location.mkloc (Ident.name ident) Location.none;
+              mb_expr =
+                { T.
+                  mod_desc = T.Tmod_structure structure;
+                  mod_loc = Location.none;
+                  mod_type = Types.Mty_ident path;  (* bogus, but unused *)
+                  mod_env = env;  (* likewise *)
+                  mod_attributes = [];
+                };
+              mb_attributes = [];
+              mb_loc = Location.none;
+            }
+          in
+          `Found_module mod_binding
+        | Cmt_format.Packed (signature, _) ->
+          (* We look for all .cmt files in the same directory at the moment.  Of
+             course, with packing, there may be name clashes.  Perhaps we can
+             avoid those by not supporting packing in the future. *)
+          `Found_pack ident
+        | Cmt_format.Interface _
+        | Cmt_format.Partial_implementation _
+        | Cmt_format.Partial_interface _ ->
+          (* CR mshinwell: no idea what to do with these *)
+          `Not_found
+        end
+      | None ->
+        if debug then Printf.printf "cmt read not useful\n%!";
         `Not_found
       end
-    | Some _ | None ->
-      if debug then Printf.printf "cmt read failed, or not useful\n%!";
-      `Not_found
     end
   | Path.Pdot (path, component, _) ->
     if debug then Printf.printf "path %s, component %s\n%!"

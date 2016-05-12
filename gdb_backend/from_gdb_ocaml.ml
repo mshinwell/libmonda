@@ -27,31 +27,30 @@
 (*                                                                         *)
 (***************************************************************************)
 
-(* CR mshinwell: think about how the search path stuff should work.  We
-   also need it in Value_printer. *)
-let cmt_cache =
-  Cmt_cache.create ~search_path:(fun () -> [])
+let cmt_cache = Cmt_cache.create ()
 
 module Our_value_printer = Value_printer.Make (Gdb_debugger)
 
 let value_printer = Our_value_printer.create ~cmt_cache
 
 let print_value ~addr ~(stream : Gdb_debugger.stream) ~dwarf_type ~summary
-      ~max_depth ~cmt_file_search_path:_ =
-  (* Care: [stream] is a naked pointer. *)
+      ~max_depth ~cmt_file_search_path =
   (* When doing e.g. "inf reg", gdb passes "int64_t" as the type to print
      at.  Since we can't yet print out-of-heap values etc, don't try to
      be fancy here. *)
   match Name_laundry.split_base_type_die_name dwarf_type with
   | None -> false
   | Some _ ->
+    let cmt_file_search_path =
+      Misc.Stdlib.String.split cmt_file_search_path ~on:':'
+    in
     Our_value_printer.print value_printer
       ~scrutinee:addr
       ~formatter:(Gdb_debugger.formatter stream)
       ~dwarf_type
       ~summary
       ~max_depth
-      ~cmt_file_search_path:[];
+      ~cmt_file_search_path;
     true
 
 let demangle ~mangled_name =

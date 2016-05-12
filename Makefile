@@ -54,10 +54,10 @@ GDB_BACKEND=gdb_backend/gdb_debugger.mli \
   gdb_backend/from_gdb_ocaml.ml
 
 SRC=src/monda_debug.ml \
-    src/cmt_cache.mli \
-    src/cmt_cache.ml \
     src/cmt_file.mli \
     src/cmt_file.ml \
+    src/cmt_cache.mli \
+    src/cmt_cache.ml \
     src/naming_conventions.mli \
     src/naming_conventions.ml \
     src/abstraction_breaker.mli \

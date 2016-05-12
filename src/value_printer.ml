@@ -39,6 +39,7 @@ module Make (D : Debugger.S) = struct
 
   type t = {
     type_oracle : Our_type_oracle.t;
+    cmt_cache : Cmt_cache.t;
   }
 
   type state = {
@@ -58,6 +59,7 @@ module Make (D : Debugger.S) = struct
 
   let create ~cmt_cache =
     { type_oracle = Our_type_oracle.create ~cmt_cache;
+      cmt_cache;
     }
 
   let rec value_looks_like_list t value =
@@ -180,7 +182,9 @@ module Make (D : Debugger.S) = struct
       | Some p -> Format.fprintf formatter "@[%s " p
       end;
       let original_size = D.Obj.size_exn value in
-      let max_size = state.max_array_elements_etc_to_print in
+      let max_size =
+        if state.summary then 2 else state.max_array_elements_etc_to_print
+      in
       let size, truncated =
         if original_size > max_size then max_size, true
         else original_size, false
@@ -266,20 +270,27 @@ module Make (D : Debugger.S) = struct
     let print_element =
       print_value t ~state:(descend state) ~type_of_ident:ty_and_env
     in
-    let rec aux v =
+    let max_elements =
+      if state.summary then 2 else state.max_array_elements_etc_to_print
+    in
+    let rec aux v ~element_index =
       if D.Obj.is_block v then begin
-        try
-          let elt = D.Obj.field_exn v 0 in
-          let next = D.Obj.field_exn v 1 in
-          print_element elt;
-          if D.Obj.is_block next then Format.fprintf formatter ";@;<1 0>";
-          aux next
-        with D.Read_error ->
-          Format.fprintf formatter "<list element read failed>"
+        if element_index >= max_elements then
+          Format.fprintf formatter ";@;..."
+        else begin
+          try
+            let elt = D.Obj.field_exn v 0 in
+            let next = D.Obj.field_exn v 1 in
+            print_element elt;
+            if D.Obj.is_block next then Format.fprintf formatter ";@;<1 0>";
+            aux next ~element_index:(element_index + 1)
+          with D.Read_error ->
+            Format.fprintf formatter "<list element read failed>"
+        end
       end
     in
     Format.fprintf formatter "@[<hv>[";
-    aux v;
+    aux v ~element_index:0;
     Format.fprintf formatter "]@]"
 
   and print_ref t ~state ~ty ~env v =
@@ -509,7 +520,9 @@ module Make (D : Debugger.S) = struct
           D.Target_memory.print_addr data_ptr
 
   let print t ~scrutinee ~dwarf_type ~summary ~max_depth
-        ~cmt_file_search_path:_ ~formatter =
+        ~cmt_file_search_path ~formatter =
+    Cmt_cache.clear_search_paths t.cmt_cache;
+    Cmt_cache.set_primary_search_path t.cmt_cache cmt_file_search_path;
     let cmt_file_and_ident_name =
       match Name_laundry.split_base_type_die_name dwarf_type with
       | None -> None
@@ -521,22 +534,23 @@ module Make (D : Debugger.S) = struct
           | basename -> basename ^ ".cmt"
           | exception (Invalid_argument _) -> source_file
         in
-        let first_try = output_dir ^ Filename.dir_sep ^ cmt_leafname in
-        if Sys.file_exists first_try then begin
-          Some (Cmt_file.load ~filename:first_try, ident_name, ident_stamp)
-        end else begin
-          (* CR mshinwell: search the path here *)
-          None
-        end
+        let cmt =
+          Cmt_cache.load t.cmt_cache
+            ~leafname:cmt_leafname
+            ~expected_in_directory:output_dir
+        in
+        match cmt with
+        | None -> None
+        | Some cmt ->
+          Cmt_cache.set_secondary_search_path t.cmt_cache
+            (Cmt_file.search_path cmt);
+          Some (cmt, ident_name, ident_stamp)
     in
     let type_of_ident =
       match cmt_file_and_ident_name with
       | None -> None
-      | Some (cmt_file, ident_name, ident_stamp) ->
-        (* CR-soon mshinwell: fix [Cmt_file] to just take the integer
-           stamp and the name *)
-        let unique_name = Printf.sprintf "%s_%d" ident_name ident_stamp in
-        Cmt_file.type_of_ident cmt_file ~unique_name
+      | Some (cmt_file, name, stamp) ->
+        Cmt_file.type_of_ident cmt_file ~name ~stamp
     in
     if debug then Printf.printf "Value_printer.print entry point\n%!";
     Format.fprintf formatter "@[";

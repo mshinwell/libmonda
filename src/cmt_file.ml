@@ -58,15 +58,6 @@ type t = {
   idents_to_types : (Types.type_expr * Env.t) String.Map.t;
 }
 
-(* CR mshinwell: use the new cache *)
-let cache : (string, t) Hashtbl.t = Hashtbl.create 1
-
-let create_null () = {
-  cmi_infos = None;
-  cmt_infos = None;
-  idents_to_types    = String.Map.empty;
-}
-
 let rec process_pattern ~pat ~idents_to_types =
   match pat.Typedtree.pat_desc with
   | Typedtree.Tpat_var (ident, _loc) ->
@@ -280,62 +271,30 @@ let create_idents_to_types_map ~cmt_infos =
     process_implementation ~structure ~idents_to_types:String.Map.empty
       ~app_points:LocTable.empty
 
-(*
-let search_load_path ~load_path ~module_name =
-  let load_path = String.split load_path ~on:':' in
-  let rec test_existence = function
-    | [] -> failwith (Printf.sprintf "cmt file for module '%s' not found" module_name)
-    | dir::dirs ->
-      let path =
-        Filename.concat dir (Printf.sprintf "%s.cmt" (String.lowercase module_name))
-      in
-      if Sys.file_exists path then path
-      else test_existence dirs
-*)
+let search_path_from_cmt_infos cmt_infos =
+  List.map (fun leaf ->
+      if Filename.is_relative leaf then
+        Filename.concat cmt_infos.Cmt_format.cmt_builddir leaf
+      else leaf)
+    cmt_infos.Cmt_format.cmt_loadpath
 
-let load ~filename =
-  try Hashtbl.find cache filename
-  with Not_found ->
-    if debug then Printf.printf "attempting to load cmt file: %s\n%!" filename;
-    let cmi_infos, cmt_infos =
-      try
-        Cmt_format.read filename
-      with Sys_error _ ->
-        None, None
-    in
+let search_path t =
+  match t.cmt_infos with
+  | None -> []
+  | Some cmt_infos -> search_path_from_cmt_infos cmt_infos
+
+let load ~pathname ~primary_search_path_for_dependencies =
+  if debug then Printf.printf "attempting to load cmt file: %s\n%!" pathname;
+  match Cmt_format.read pathname with
+  | exception (Sys_error _) -> None
+  | cmi_infos, cmt_infos ->
     let idents_to_types, _application_points =
       match cmt_infos with
       | None -> String.Map.empty, LocTable.empty
       | Some cmt_infos ->
-        let () =
-          (* restores load path: needs to be done before calling
-             [Env.env_of_only_summary] otherwise an exception will be thrown when
-             trying to open "distant" modules.
-             By restoring the load_path used when compiling this file [Env] then
-             knows where to find such "distant" modules. *)
-          (* CR trefis: do we really want to concat with [!Config.load_path] here?
-             There might be garbage in it (and we restore it when we're done, so it's
-             *really* likely there will be garbage in it).
-          *)
-          (* CR mshinwell: load paths need more thinking *)
-          let extra_load_path =
-            match Filename.dirname filename with
-            | "" -> []
-            | dirname -> [dirname]
-          in
-          Config.load_path :=
-            (List.map (fun leaf ->
-              if Filename.is_relative leaf then
-                Filename.concat cmt_infos.Cmt_format.cmt_builddir leaf
-              else leaf)
-              cmt_infos.Cmt_format.cmt_loadpath) @ extra_load_path @ !Config.load_path;
-          if debug then begin
-            Printf.printf "cmt_builddir=%s\n%!" cmt_infos.Cmt_format.cmt_builddir
-(*            Printf.printf "the load path will be: %s\n%!"
-              (String.concat "," !Config.load_path)
-*)
-          end
-        in
+        let secondary_search_path = search_path_from_cmt_infos cmt_infos in
+        Config.load_path :=
+          primary_search_path_for_dependencies @ secondary_search_path;
         let idents, app_points = create_idents_to_types_map ~cmt_infos in
         try
           let idents =
@@ -386,15 +345,18 @@ let load ~filename =
           String.Map.empty, LocTable.empty
         end
     in 
-    let t = {
-      cmi_infos;
-      cmt_infos;
-      idents_to_types;
-    }
+    let t =
+      { cmi_infos;
+        cmt_infos;
+        idents_to_types;
+      }
     in
-    Hashtbl.add cache filename t;
-    t
+    Some t
 
-let type_of_ident t ~unique_name =
-  try Some (String.Map.find unique_name t.idents_to_types)
-  with Not_found -> None
+  let type_of_ident t ~name ~stamp =
+    let unique_name = Printf.sprintf "%s_%d" name stamp in
+    try Some (String.Map.find unique_name t.idents_to_types)
+    with Not_found -> None
+
+let cmi_infos t = t.cmi_infos
+let cmt_infos t = t.cmt_infos
