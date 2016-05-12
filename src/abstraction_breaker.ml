@@ -159,8 +159,14 @@ let rec find_module_binding t ~dir_prefix ~path ~is_toplevel ~env =
                         (* CR mshinwell: this might rely on globals---we should
                            clean this all up *)
                         try
+                          (* We return the [str_final_env] so we have all of
+                             the definitions from the structure available for
+                             lookup (they may be needed for recursive
+                             cases).  By contrast the [structure_item]'s
+                             [str_env] only has the environment immediately
+                             before the definition. *)
                           Env.env_of_only_summary Envaux.env_from_summary
-                            structure_item.T.str_env
+                            structure.T.str_final_env
                         with Envaux.Error _ -> Env.empty
 (*
                         match type_decl.T.typ_manifest with
