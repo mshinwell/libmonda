@@ -276,7 +276,7 @@ module Make (D : Debugger.S) = struct
     let rec aux v ~element_index =
       if D.Obj.is_block v then begin
         if element_index >= max_elements then
-          Format.fprintf formatter ";@;..."
+          Format.fprintf formatter "@;..."
         else begin
           try
             let elt = D.Obj.field_exn v 0 in

@@ -104,10 +104,12 @@ module Make (D : Debugger.S) = struct
 
   type t = {
     abstraction_breaker : Abstraction_breaker.t;
+    cmt_cache : Cmt_cache.t;
   }
 
   let create ~cmt_cache =
     { abstraction_breaker = Abstraction_breaker.create ~cmt_cache;
+      cmt_cache;
     }
 
   let extract_constant_ctors ~cases =
@@ -320,6 +322,10 @@ module Make (D : Debugger.S) = struct
       Printf.printf "find_type_information starting, type info present? %s\n%!"
         (match type_expr_and_env with None -> "no" | Some _ -> "yes")
     end;
+    let load_path = !Config.load_path in
+    (* The load path is set here because we may call [Env] functions
+       that try to load .cmt files (e.g. [Env.find_type]). *)
+    Config.load_path := Cmt_cache.get_search_path t.cmt_cache;
     let result : Result.t =
       if D.Obj.is_int scrutinee then
         match type_expr_and_env with
@@ -356,5 +362,6 @@ module Make (D : Debugger.S) = struct
       Printf.printf "find_type_information returning %s\n%!"
         (Result.to_string result)
     end;
+    Config.load_path := load_path;
     result
 end

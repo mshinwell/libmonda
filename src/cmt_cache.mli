@@ -37,6 +37,7 @@ val set_primary_search_path : t -> string list -> unit
 val set_secondary_search_path : t -> string list -> unit
 
 val get_primary_search_path : t -> string list
+val get_search_path : t -> string list
 
 val load
    : ?expected_in_directory:string

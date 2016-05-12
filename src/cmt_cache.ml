@@ -53,16 +53,16 @@ let set_secondary_search_path t search_path =
 
 let get_primary_search_path t = t.primary_search_path
 
-let search_path t = t.primary_search_path @ t.secondary_search_path
+let get_search_path t = t.primary_search_path @ t.secondary_search_path
 
 let load ?expected_in_directory t ~leafname =
   try Some (Hashtbl.find t.cache leafname)
   with Not_found ->
     let search_path =
       match expected_in_directory with
-      | None -> search_path t
+      | None -> get_search_path t
       | Some expected_in_directory ->
-        expected_in_directory :: (search_path t)
+        expected_in_directory :: (get_search_path t)
     in
     match Misc.find_in_path_uncap search_path leafname with
     | exception Not_found -> None

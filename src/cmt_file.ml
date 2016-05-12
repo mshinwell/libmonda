@@ -288,6 +288,7 @@ let load ~pathname ~primary_search_path_for_dependencies =
   match Cmt_format.read pathname with
   | exception (Sys_error _) -> None
   | cmi_infos, cmt_infos ->
+    let load_path = !Config.load_path in
     let idents_to_types, _application_points =
       match cmt_infos with
       | None -> String.Map.empty, LocTable.empty
@@ -330,21 +331,22 @@ let load ~pathname ~primary_search_path_for_dependencies =
           in
           idents, app_points
         with
-        | Envaux.Error (Envaux.Module_not_found path) -> begin
-          if debug then begin
+        | Envaux.Error (Envaux.Module_not_found path) ->
+          begin if debug then begin
             Printf.printf "cmt load failed: module '%s' missing, load path: %s\n%!"
               (Path.name path)
               (String.concat "," !Config.load_path)
           end;
           String.Map.empty, LocTable.empty
-        end
+          end
         | exn -> begin
           if debug then
             Printf.printf "exception whilst reading cmt file(s): %s\n%!"
               (Printexc.to_string exn);
           String.Map.empty, LocTable.empty
         end
-    in 
+    in
+    Config.load_path := load_path;
     let t =
       { cmi_infos;
         cmt_infos;
