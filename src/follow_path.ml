@@ -1,31 +1,31 @@
-(**************************************************************************)
-(*                                                                        *)
-(*                Make OCaml native debugging awesome!                    *)
-(*                                                                        *)
-(*                  Mark Shinwell, Jane Street Europe                     *)
-(*                                                                        *)
-(* Copyright (c) 2016 Jane Street Group, LLC                              *)
-(*                                                                        *)
-(* Permission is hereby granted, free of charge, to any person obtaining  *)
-(* a copy of this software and associated documentation files             *)
-(* (the "Software"), to deal in the Software without restriction,         *)
-(* including without limitation the rights to use, copy, modify, merge,   *)
-(* publish, distribute, sublicense, and/or sell copies of the Software,   *)
-(* and to permit persons to whom the Software is furnished to do so,      *)
-(* subject to the following conditions:                                   *)
-(*                                                                        *)
-(* The above copyright notice and this permission notice shall be         *)
-(* included in all copies or substantial portions of the Software.        *)
-(*                                                                        *)
-(* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        *)
-(* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     *)
-(* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. *)
-(* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   *)
-(* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   *)
-(* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      *)
-(* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 *)
-(*                                                                        *)
-(**************************************************************************)
+(***************************************************************************)
+(*                                                                         *)
+(*                 Make OCaml native debugging awesome!                    *)
+(*                                                                         *)
+(*                   Mark Shinwell, Jane Street Europe                     *)
+(*                                                                         *)
+(*  Copyright (c) 2016 Jane Street Group, LLC                              *)
+(*                                                                         *)
+(*  Permission is hereby granted, free of charge, to any person obtaining  *)
+(*  a copy of this software and associated documentation files             *)
+(*  (the "Software"), to deal in the Software without restriction,         *)
+(*  including without limitation the rights to use, copy, modify, merge,   *)
+(*  publish, distribute, sublicense, and/or sell copies of the Software,   *)
+(*  and to permit persons to whom the Software is furnished to do so,      *)
+(*  subject to the following conditions:                                   *)
+(*                                                                         *)
+(*  The above copyright notice and this permission notice shall be         *)
+(*  included in all copies or substantial portions of the Software.        *)
+(*                                                                         *)
+(*  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        *)
+(*  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     *)
+(*  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. *)
+(*  IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   *)
+(*  CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   *)
+(*  TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      *)
+(*  SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 *)
+(*                                                                         *)
+(***************************************************************************)
 
 [@@@ocaml.warning "+a-4-9-30-40-41-42"]
 
@@ -41,6 +41,11 @@ module Make (D : Debugger.S) = struct
     type_oracle : Our_type_oracle.t;
     cmt_cache : Cmt_cache.t;
   }
+
+  let create ~cmt_cache =
+    { type_oracle = Our_type_oracle.create ~cmt_cache;
+      cmt_cache;
+    }
 
   (* CR-someday mshinwell: extend to support other things *)
   type parsed =
@@ -71,21 +76,25 @@ module Make (D : Debugger.S) = struct
       split
       (Some Identity)
 
-  let find_value t ~path ~type_expr_and_env v =
+  let find_value t ~path ~type_expr_and_env ~must_be_mutable v =
     match type_expr_and_env with
     | None -> None
     | Some (type_expr, env) ->
       let path = parse ~path in
-      let rec find_component ~path ~type_expr ~env v =
+      let rec find_component ~path ~type_expr ~env ~previous_was_mutable v =
         let oracle_result =
           Our_type_oracle.find_type_information t.type_oracle ~formatter
             ~type_expr_and_env:(Some (type_expr, env)) ~scrutinee:v
         in
         match path with
-        | Identity -> Some v
+        | Identity ->
+          if must_be_mutable && (not previous_was_mutable) then
+            None
+          else
+            Some v
         | Record { field_name; next; } ->
           begin match oracle_result with
-          | Record (path, params, args, fields, record_repr, env) ->
+          | Record (_path, params, args, fields, _record_repr, env) ->
             let fields = Array.of_list fields in
             let found = ref None in
             for index = 0 to Array.length fields - 1 do
@@ -103,8 +112,17 @@ module Make (D : Debugger.S) = struct
                 None
               else
                 let field = D.Obj.field_exn v index in
-                let field_type = decl.ld_type in
-                find_component ~path:next ~type_expr:field_type ~env field
+                let field_type =
+                  try Ctype.apply env params decl.ld_type args
+                  with Ctype.Cannot_apply -> decl.ld_type
+                in
+                let field_is_mutable =
+                  match decl.ld_mutable with
+                  | Immutable -> false
+                  | Mutable -> true
+                in
+                find_component ~path:next ~type_expr:field_type ~env
+                  ~previous_was_mutable:field_is_mutable field
             end
           | _ -> None
           end
@@ -115,7 +133,8 @@ module Make (D : Debugger.S) = struct
               None
             else
               let element = D.Obj.field_exn v index in
-              find_component ~path:next ~type_expr:element_type ~env element
+              find_component ~path:next ~type_expr:element_type ~env
+                ~previous_was_mutable:false element
           | Tuple (element_types, env) ->
             let element_types = Array.of_list element_types in
             if index >= D.Obj.size_exn v
@@ -125,7 +144,8 @@ module Make (D : Debugger.S) = struct
             else
               let element = D.Obj.field_exn v index in
               let element_type = element_types.(index) in
-              find_component ~path:next ~type_expr:element_type ~env element
+              find_component ~path:next ~type_expr:element_type ~env
+                ~previous_was_mutable:false element
           | _ -> None
           end
       in
