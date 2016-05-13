@@ -540,7 +540,7 @@ module Make (D : Debugger.S) = struct
             ~expected_in_directory:output_dir
         in
         match cmt with
-        | None -> None
+        | None -> Printf.eprintf "cmt not found\n%!"; None
         | Some cmt ->
           Cmt_cache.set_secondary_search_path t.cmt_cache
             (Cmt_file.search_path cmt);
