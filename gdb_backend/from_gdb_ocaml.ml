@@ -29,8 +29,10 @@
 
 let cmt_cache = Cmt_cache.create ()
 
+module Follow_path = Follow_path.Make (Gdb_debugger)
 module Our_value_printer = Value_printer.Make (Gdb_debugger)
 
+let follow_path = Follow_path.create ~cmt_cache
 let value_printer = Our_value_printer.create ~cmt_cache
 
 let print_value ~addr ~(stream : Gdb_debugger.stream) ~dwarf_type ~summary
@@ -52,6 +54,9 @@ let print_value ~addr ~(stream : Gdb_debugger.stream) ~dwarf_type ~summary
       ~max_depth
       ~cmt_file_search_path;
     true
+
+let evaluate (path : string) =
+  Follow_path.evaluate follow_path ~path ~must_be_mutable:false
 
 let demangle ~mangled_name =
   (* CR mshinwell: this needs revisiting. *)

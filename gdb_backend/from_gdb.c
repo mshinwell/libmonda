@@ -106,12 +106,29 @@ print_as_c:
   CAMLreturn0;
 }
 
+value
+monda_evaluate (char* expr, int length)
+{
+  value v_expr;
+  static value* cb = NULL;
+
+  if (cb == NULL) {
+    cb = caml_named_value ("From_gdb_ocaml.evaluate");
+    assert(cb != NULL);
+  }
+
+  v_expr = caml_alloc_string(length);
+  memcpy(String_val(v_expr), expr, length);
+
+  return caml_callback(*cb, v_expr);
+}
+
 char*
 monda_demangle (char* mangled, int options)
 {
   CAMLparam0();
   CAMLlocal2(caml_res, caml_mangled);
-  static value *cb = NULL;
+  static value*cb = NULL;
   char* res = NULL;
 
   if (cb == NULL) {

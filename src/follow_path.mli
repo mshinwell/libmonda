@@ -27,19 +27,22 @@
 (*                                                                         *)
 (***************************************************************************)
 
-(** Given a starting value on the target, follow a path specified by the
-    user (e.g. "t.field1.(0)"), to find another value. *)
+(** Evaluate a path specified by the user (e.g. "t.field1.(0)"), to find a
+    value. *)
 
 module Make (D : Debugger.S) : sig
   type t
 
   val create : cmt_cache:Cmt_cache.t -> t
 
-  val find_value
+  type _ lvalue_or_rvalue =
+    | Lvalue : D.target_addr lvalue_or_rvalue
+    | Rvalue : D.Obj.t lvalue_or_rvalue
+
+  val evaluate
      : t
     -> path:string
-    -> type_expr_and_env:(Types.type_expr * Env.t) option
+    -> lvalue_or_rvalue:obj_or_addr lvalue_or_rvalue
     -> must_be_mutable:bool
-    -> D.Obj.t
-    -> D.Obj.t option
+    -> obj_or_addr option
 end

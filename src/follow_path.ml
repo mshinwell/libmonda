@@ -50,48 +50,84 @@ module Make (D : Debugger.S) = struct
   (* CR-someday mshinwell: extend to support other things *)
   type parsed =
     | Identity
+    | Module of { name : string; next : parsed; }
     | Indexed of { index : int; next : parsed; }
     | Record of { field_name : string; next : parsed; }
 
-  let rec parse ~path =
-    let split = Misc.Stdlib.String.split path ~on:'.' in
-    List.fold_right (fun component next ->
-        match next with
-        | None -> None
-        | Some next ->
-          if String.length component >= 3
-            && String.get component 0 = '('
-            && String.get component (String.length component - 1) = ')'
-          then
-            let index =
-              String.sub component 1 (String.length component - 2)
-            in
-            match int_of_string index with
-            | exception _ -> None
-            | index ->
-              if index < 0 then None
-              else Some (Indexed { index; next; })
-          else
-            Some (Record { field_name = component; next; }))
-      split
-      (Some Identity)
+  type toplevel_parsed =
+    | Module of { name : string; next : parsed; }
+    | Variable of { name : string; next : parsed; }
 
-  let find_value t ~path ~type_expr_and_env ~must_be_mutable v =
+  let starts_with_capital str =
+    let first_letter = String.get str 0 in
+    let upper_first_letter = Char.uppercase_ascii first_letter in
+    first_letter = upper_first_letter
+
+  let rec parse ~path : toplevel_parsed =
+    let split = Misc.Stdlib.String.split path ~on:'.' in
+    match split with
+    | [] -> None
+    | [name] ->
+      if starts_with_capital name then None
+      else Some (Variable { name; next = Identity; })
+    | name::rest_of_path ->
+      let next =
+        List.fold_right (fun component next ->
+            match next with
+            | None -> None
+            | Some next ->
+              if String.length component >= 3
+                && String.get component 0 = '('
+                && String.get component (String.length component - 1) = ')'
+              then
+                let index =
+                  String.sub component 1 (String.length component - 2)
+                in
+                match int_of_string index with
+                | exception _ -> None
+                | index ->
+                  if index < 0 then None
+                  else Some (Indexed { index; next; })
+              else
+                let first_letter = String.get component 0 in
+                let upper_first_letter = Char.uppercase_ascii first_letter in
+                if first_letter = upper_first_letter then
+                  Some (Module { name = component; next; })
+                else
+                  Some (Record { field_name = component; next; }))
+          rest_of_path
+          (Some Identity)
+      in
+      if starts_with_capital name then Some (Module { name; next; })
+      else Some (Variable { name; next; })
+
+  type value_kind = Lvalue | Rvalue
+
+  let evaluate_given_starting_point (type obj_or_addr) t ~path
+        ~type_expr_and_env ~(lvalue_or_rvalue : obj_or_addr value_kind)
+        ~must_be_mutable v : obj_or_addr option =
     match type_expr_and_env with
     | None -> None
     | Some (type_expr, env) ->
-      let path = parse ~path in
-      let rec find_component ~path ~type_expr ~env ~previous_was_mutable v =
+      let rec find_component ~path ~type_expr ~env ~previous_was_mutable
+            ~address_of_v v =
         let oracle_result =
           Our_type_oracle.find_type_information t.type_oracle ~formatter
             ~type_expr_and_env:(Some (type_expr, env)) ~scrutinee:v
         in
         match path with
         | Identity ->
-          if must_be_mutable && (not previous_was_mutable) then
+          if must_be_mutable && (not previous_was_mutable) then begin
             None
-          else
-            Some v
+          end else begin
+            match lvalue_or_rvalue with
+            | Lvalue -> address_of_v
+            | Rvalue -> Some v
+          end
+        | Module _ ->
+          (* CR-soon mshinwell: fill this in for toplevel accesses, e.g.
+             M.constant *)
+          None
         | Record { field_name; next; } ->
           begin match oracle_result with
           | Record (_path, params, args, fields, _record_repr, env) ->
@@ -112,6 +148,7 @@ module Make (D : Debugger.S) = struct
                 None
               else
                 let field = D.Obj.field_exn v index in
+                let address_of_field = D.Obj.address_of_field v index in
                 let field_type =
                   try Ctype.apply env params decl.ld_type args
                   with Ctype.Cannot_apply -> decl.ld_type
@@ -122,7 +159,9 @@ module Make (D : Debugger.S) = struct
                   | Mutable -> true
                 in
                 find_component ~path:next ~type_expr:field_type ~env
-                  ~previous_was_mutable:field_is_mutable field
+                  ~previous_was_mutable:field_is_mutable
+                  ~address_of_v:address_of_field
+                  field
             end
           | _ -> None
           end
@@ -132,9 +171,12 @@ module Make (D : Debugger.S) = struct
             if index >= D.Obj.size_exn v then
               None
             else
+              let address_of_element = D.Obj.address_of_field v index in
               let element = D.Obj.field_exn v index in
               find_component ~path:next ~type_expr:element_type ~env
-                ~previous_was_mutable:false element
+                ~previous_was_mutable:false
+                ~address_of_v:(Some address_of_element)
+                element
           | Tuple (element_types, env) ->
             let element_types = Array.of_list element_types in
             if index >= D.Obj.size_exn v
@@ -142,12 +184,30 @@ module Make (D : Debugger.S) = struct
             then
               None
             else
+              let address_of_element = D.Obj.address_of_field v index in
               let element = D.Obj.field_exn v index in
               let element_type = element_types.(index) in
               find_component ~path:next ~type_expr:element_type ~env
-                ~previous_was_mutable:false element
+                ~previous_was_mutable:false
+                ~address_of_v:(Some address_of_element)
+                element
           | _ -> None
           end
       in
-      find_component ~path ~type_expr v
+      find_component ~path ~type_expr ~previous_was_mutable:false
+        ~address_of_v:None v
+
+  let evaluate t ~path ~lvalue_or_rvalue ~must_be_mutable =
+    match parse ~path with
+    | None -> None
+    | Some path ->
+      match path with
+      | Module _ -> None  (* CR mshinwell: to do *)
+      | Variable { name = starting_point; next = rest_of_path; } ->
+        let starting_point =
+          
+        in
+        evaluate_given_starting_point t ~path:rest_of_path
+          ~type_expr_and_env ~lvalue_or_rvalue ~must_be_mutable
+          starting_point
 end

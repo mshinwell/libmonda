@@ -69,6 +69,9 @@ module type S = sig
         pointers (e.g. code pointers in closures). *)
     val field_as_addr_exn : t -> int -> target_addr
 
+    (** The address that would be read by [field_exn] for the given field. *)
+    val address_of_field : t -> int -> target_addr
+
     (** Read the NULL-terminated string pointed to by the given field
         from the target's memory. *)
     val c_string_field_exn : t -> int -> string
