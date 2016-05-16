@@ -29,10 +29,7 @@
 
 [@@@ocaml.warning "+a-4-9-30-40-41-42"]
 
-module List = ListLabels
 module Variant_kind = Type_oracle.Variant_kind
-
-let debug = Monda_debug.debug
 
 module Make (D : Debugger.S) = struct
   module Our_type_oracle = Type_oracle.Make (D)
@@ -63,7 +60,7 @@ module Make (D : Debugger.S) = struct
     let upper_first_letter = Char.uppercase_ascii first_letter in
     first_letter = upper_first_letter
 
-  let rec parse ~path : toplevel_parsed =
+  let parse ~path : toplevel_parsed option =
     let split = Misc.Stdlib.String.split path ~on:'.' in
     match split with
     | [] -> None
@@ -98,19 +95,25 @@ module Make (D : Debugger.S) = struct
           rest_of_path
           (Some Identity)
       in
-      if starts_with_capital name then Some (Module { name; next; })
-      else Some (Variable { name; next; })
+      match next with
+      | None -> None
+      | Some next ->
+        if starts_with_capital name then Some (Module { name; next; })
+        else Some (Variable { name; next; })
 
-  type value_kind = Lvalue | Rvalue
+  type _ lvalue_or_rvalue =
+    | Lvalue : D.target_addr lvalue_or_rvalue
+    | Rvalue : D.Obj.t lvalue_or_rvalue
 
   let evaluate_given_starting_point (type obj_or_addr) t ~path
-        ~type_expr_and_env ~(lvalue_or_rvalue : obj_or_addr value_kind)
-        ~must_be_mutable v : obj_or_addr option =
+        ~type_expr_and_env ~(lvalue_or_rvalue : obj_or_addr lvalue_or_rvalue)
+        ~must_be_mutable ~formatter v : obj_or_addr option =
     match type_expr_and_env with
     | None -> None
     | Some (type_expr, env) ->
       let rec find_component ~path ~type_expr ~env ~previous_was_mutable
-            ~address_of_v v =
+            ~(address_of_v : D.target_addr option) (v : D.Obj.t)
+            : obj_or_addr option =
         let oracle_result =
           Our_type_oracle.find_type_information t.type_oracle ~formatter
             ~type_expr_and_env:(Some (type_expr, env)) ~scrutinee:v
@@ -135,14 +138,14 @@ module Make (D : Debugger.S) = struct
             let found = ref None in
             for index = 0 to Array.length fields - 1 do
               let decl = fields.(index) in
-              if Ident.name decl.ld_id = desired_field then begin
+              if Ident.name decl.ld_id = field_name then begin
                 found := Some (index, decl)
               end
             done;
-            begin match found with
+            begin match !found with
             | None -> None
             | Some (index, decl) ->
-              if (not (D.is_block v))
+              if (not (D.Obj.is_block v))
                 || D.Obj.size_exn v <= index
               then
                 None
@@ -160,7 +163,7 @@ module Make (D : Debugger.S) = struct
                 in
                 find_component ~path:next ~type_expr:field_type ~env
                   ~previous_was_mutable:field_is_mutable
-                  ~address_of_v:address_of_field
+                  ~address_of_v:(Some address_of_field)
                   field
             end
           | _ -> None
@@ -195,19 +198,24 @@ module Make (D : Debugger.S) = struct
           end
       in
       find_component ~path ~type_expr ~previous_was_mutable:false
-        ~address_of_v:None v
+        ~address_of_v:None ~env v
 
-  let evaluate t ~path ~lvalue_or_rvalue ~must_be_mutable =
+  let evaluate t ~path ~lvalue_or_rvalue ~must_be_mutable
+        ~cmt_file_search_path ~formatter =
     match parse ~path with
     | None -> None
     | Some path ->
       match path with
       | Module _ -> None  (* CR mshinwell: to do *)
-      | Variable { name = starting_point; next = rest_of_path; } ->
-        let starting_point =
-          
-        in
-        evaluate_given_starting_point t ~path:rest_of_path
-          ~type_expr_and_env ~lvalue_or_rvalue ~must_be_mutable
-          starting_point
+      | Variable { name; next = rest_of_path; } ->
+        match D.find_named_value ~name with
+        | None -> None
+        | Some (starting_point, dwarf_type) ->
+          let type_expr_and_env =
+            Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
+              ~cmt_cache:t.cmt_cache ~cmt_file_search_path
+          in
+          evaluate_given_starting_point t ~path:rest_of_path
+            ~type_expr_and_env ~lvalue_or_rvalue ~must_be_mutable
+            ~formatter starting_point
 end

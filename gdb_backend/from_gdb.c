@@ -109,7 +109,8 @@ print_as_c:
 value
 monda_evaluate (char* expr, int length)
 {
-  value v_expr;
+  CAMLparam0();
+  CAMLlocal2(v_stream, v_expr);
   static value* cb = NULL;
 
   if (cb == NULL) {
@@ -120,7 +121,11 @@ monda_evaluate (char* expr, int length)
   v_expr = caml_alloc_string(length);
   memcpy(String_val(v_expr), expr, length);
 
-  return caml_callback(*cb, v_expr);
+  v_stream = caml_copy_int64((uint64_t) stderr_fileopen());
+
+  return caml_callback3(*cb, v_expr,
+    caml_copy_string(search_path ? search_path : ""),
+    v_stream);
 }
 
 char*

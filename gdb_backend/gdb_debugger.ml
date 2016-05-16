@@ -123,6 +123,12 @@ module Gdb_indirect = struct
      : source_filename:string
     -> string list
     = "monda_compilation_directories_for_source_file"
+
+
+  external find_named_value
+     : name:string
+    -> (obj * string) option
+    = "monda_find_named_value"
 end
 
 let copy_int32 (buf : string) =
@@ -191,6 +197,11 @@ module Obj = struct
 
   let field_as_addr_exn = field_exn
 
+  let address_of_field t i =
+    assert (i >= (-1));
+    Nativeint.add t (Nativeint.mul (Nativeint.of_int i)
+      (Nativeint.of_int Arch.size_addr))
+
   let tag_exn x = 
     if is_int x then Obj.int_tag
     else if is_unaligned x then Obj.unaligned_tag
@@ -253,6 +264,9 @@ let filename_and_line_number_of_pc addr
 
 let compilation_directories_for_source_file =
   Gdb_indirect.compilation_directories_for_source_file
+
+let find_named_value =
+  Gdb_indirect.find_named_value
 
 type stream = Gdb.Ui_file.t
 

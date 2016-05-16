@@ -136,6 +136,10 @@ module type S = sig
      : source_filename:string
     -> string list
 
+  (** Attempt to resolve a name (e.g. the name of a parameter or
+      let-bound variable) to a value and its DWARF type. *)
+  val find_named_value : name:string -> (Obj.t * string) option
+
   type stream
 
   (** A formatter that prints to the debugger terminal for user feedback. *)

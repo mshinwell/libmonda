@@ -27,24 +27,8 @@
 (*                                                                         *)
 (***************************************************************************)
 
-(** Evaluate a path specified by the user (e.g. "t.field1.(0)"), to find a
-    value. *)
-
-module Make (D : Debugger.S) : sig
-  type t
-
-  val create : cmt_cache:Cmt_cache.t -> t
-
-  type _ lvalue_or_rvalue =
-    | Lvalue : D.target_addr lvalue_or_rvalue
-    | Rvalue : D.Obj.t lvalue_or_rvalue
-
-  val evaluate
-     : t
-    -> path:string
-    -> lvalue_or_rvalue:'obj_or_addr lvalue_or_rvalue
-    -> must_be_mutable:bool
-    -> cmt_file_search_path:string list
-    -> formatter:Format.formatter
-    -> 'obj_or_addr option
-end
+val type_expr_and_env_from_dwarf_type
+   : dwarf_type:string
+  -> cmt_cache:Cmt_cache.t
+  -> cmt_file_search_path:string list
+  -> (Types.type_expr * Env.t) option

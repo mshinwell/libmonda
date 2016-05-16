@@ -65,8 +65,12 @@ SRC=src/monda_debug.ml \
     src/debugger.mli \
     src/type_oracle.mli \
     src/type_oracle.ml \
+    src/type_helper.mli \
+    src/type_helper.ml \
     src/value_printer.mli \
-    src/value_printer.ml
+    src/value_printer.ml \
+    src/follow_path.mli \
+    src/follow_path.ml
 
 LIBMONDA_GDB=libmonda_gdb.so
 

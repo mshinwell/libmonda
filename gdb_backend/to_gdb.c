@@ -34,6 +34,7 @@
 
 #include "defs.h"
 #include "symtab.h"
+#include "value.h"
 
 static int
 compilation_directories_for_source_file_callback(struct symtab* symtab,
@@ -103,4 +104,105 @@ monda_find_pc_line (CORE_ADDR addr, int not_current)
   Field(result, 0) = v_filename_and_line;
 
   CAMLreturn(result);
+}
+
+typedef enum {
+  ARGUMENTS,
+  LOCALS
+} find_named_value_stage;
+
+typedef struct {
+  find_named_value_stage stage;
+  struct frame_info* frame;
+  const struct block* block;
+  const char* name_to_find;
+  struct value* found_value;
+} find_named_value_data;
+
+static void
+find_named_value_callback(const char* name, struct symbol* sym,
+      void* user_data)
+{
+  find_named_value_data* output = (find_named_value_data*) user_data;
+
+  if (!output->found_value) {
+    if (!strcmp(name, output->name_to_find)) {
+      switch (output->stage) {
+        case ARGUMENTS: {
+          struct frame_arg arg;
+          struct frame_arg entry_arg;
+          read_frame_arg(sym, output->frame, &arg, &entry_arg);
+          if (arg.val && arg.sym && !arg.error) {
+            output->found_value = arg.val;
+          }
+          if (arg.error) {
+            xfree(arg.error);
+          }
+          if (entry_arg.error) {
+            xfree(entry_arg.error);
+          }
+        }
+
+        case LOCALS: {
+          struct value* local;
+          local = read_var_value(sym, output->block, output->frame);
+          if (local) {
+            output->found_value = (intnat) value_as_address(local);
+          }
+        }
+
+        default:
+          assert(0);
+      }
+    }
+  }
+}
+
+CAMLprim value
+monda_find_named_value(value v_name)
+{
+  /* Search arguments and local variables of the current frame to find a
+     value with the given name. */
+
+  CAMLparam0();
+  CORE_ADDR pc;
+  static value *callback = NULL;
+  struct frame_info* current_frame;
+  struct symbol* current_function = NULL;
+  find_named_value_data output;
+  CAMLlocal2(v_found_value, v_dwarf_type);
+  value v_option;
+
+  current_frame = get_current_frame();
+
+  if (get_frame_pc_if_available(current_frame, &pc)) {
+    current_function = get_frame_function(current_frame);
+    if (current_function != NULL) {
+      output.name_to_find = String_val(v_name);
+      output.frame = current_frame;
+      output.block = SYMBOL_BLOCK_VALUE(current_function);
+      output.found_value = NULL;
+      output.stage = ARGUMENTS;
+      iterate_over_block_arg_vars(output.block,
+        find_named_value_callback, &output);
+      if (!output.found_value) {
+        output.stage = LOCALS;
+        iterate_over_block_local_vars(output.block,
+          find_named_value_callback, &output);
+      }
+    }
+  }
+
+  if (!output.found_value) {
+    return Val_unit;  /* None */
+  }
+
+  v_found_value = caml_copy_nativeint(value_as_address(output.found_value));
+  v_dwarf_type = caml_copy_string(
+    TYPE_NAME(value_type(output.found_value)));
+
+  v_option = caml_alloc_small(2, 0 /* Some */);
+  Field(v_option, 0) = v_found_value;
+  Field(v_option, 1) = v_dwarf_type;
+  return v_option;
 }

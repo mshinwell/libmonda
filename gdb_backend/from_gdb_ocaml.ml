@@ -35,17 +35,18 @@ module Our_value_printer = Value_printer.Make (Gdb_debugger)
 let follow_path = Follow_path.create ~cmt_cache
 let value_printer = Our_value_printer.create ~cmt_cache
 
-let print_value ~addr ~(stream : Gdb_debugger.stream) ~dwarf_type ~summary
-      ~max_depth ~cmt_file_search_path =
+let split_search_path path =
+  Misc.Stdlib.String.split path ~on:':'
+
+let print_value addr (stream : Gdb_debugger.stream) dwarf_type summary
+      max_depth cmt_file_search_path =
   (* When doing e.g. "inf reg", gdb passes "int64_t" as the type to print
      at.  Since we can't yet print out-of-heap values etc, don't try to
      be fancy here. *)
   match Name_laundry.split_base_type_die_name dwarf_type with
   | None -> false
   | Some _ ->
-    let cmt_file_search_path =
-      Misc.Stdlib.String.split cmt_file_search_path ~on:':'
-    in
+    let cmt_file_search_path = split_search_path cmt_file_search_path in
     Our_value_printer.print value_printer
       ~scrutinee:addr
       ~formatter:(Gdb_debugger.formatter stream)
@@ -55,8 +56,11 @@ let print_value ~addr ~(stream : Gdb_debugger.stream) ~dwarf_type ~summary
       ~cmt_file_search_path;
     true
 
-let evaluate (path : string) =
+let evaluate (path : string) (cmt_file_search_path : string)
+      (stream : Gdb_debugger.stream) =
+  let cmt_file_search_path = split_search_path cmt_file_search_path in
   Follow_path.evaluate follow_path ~path ~must_be_mutable:false
+    ~cmt_file_search_path ~formatter:(Gdb_debugger.formatter stream)
 
 let demangle ~mangled_name =
   (* CR mshinwell: this needs revisiting. *)
@@ -64,4 +68,5 @@ let demangle ~mangled_name =
 
 let () =
   Callback.register "From_gdb_ocaml.print_value" print_value;
-  Callback.register "From_gdb_ocaml.demangle" demangle
+  Callback.register "From_gdb_ocaml.demangle" demangle;
+  Callback.register "From_gdb_ocaml.evaluate" evaluate

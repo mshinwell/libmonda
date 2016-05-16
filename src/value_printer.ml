@@ -521,36 +521,9 @@ module Make (D : Debugger.S) = struct
 
   let print t ~scrutinee ~dwarf_type ~summary ~max_depth
         ~cmt_file_search_path ~formatter =
-    Cmt_cache.clear_search_paths t.cmt_cache;
-    Cmt_cache.set_primary_search_path t.cmt_cache cmt_file_search_path;
-    let cmt_file_and_ident_name =
-      match Name_laundry.split_base_type_die_name dwarf_type with
-      | None -> None
-      | Some { output_path; ident_name; ident_stamp; } ->
-        let output_dir = Filename.dirname output_path in
-        let source_file = Filename.basename output_path in
-        let cmt_leafname =
-          match Filename.chop_extension source_file with
-          | basename -> basename ^ ".cmt"
-          | exception (Invalid_argument _) -> source_file
-        in
-        let cmt =
-          Cmt_cache.load t.cmt_cache
-            ~leafname:cmt_leafname
-            ~expected_in_directory:output_dir
-        in
-        match cmt with
-        | None -> Printf.eprintf "cmt not found\n%!"; None
-        | Some cmt ->
-          Cmt_cache.set_secondary_search_path t.cmt_cache
-            (Cmt_file.search_path cmt);
-          Some (cmt, ident_name, ident_stamp)
-    in
     let type_of_ident =
-      match cmt_file_and_ident_name with
-      | None -> None
-      | Some (cmt_file, name, stamp) ->
-        Cmt_file.type_of_ident cmt_file ~name ~stamp
+      Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
+        ~cmt_cache:t.cmt_cache ~cmt_file_search_path
     in
     if debug then Printf.printf "Value_printer.print entry point\n%!";
     Format.fprintf formatter "@[";
