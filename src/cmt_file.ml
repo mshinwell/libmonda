@@ -358,12 +358,7 @@ let load ~pathname ~primary_search_path_for_dependencies =
   let type_of_ident t ~name ~stamp =
     let unique_name = Printf.sprintf "%s_%d" name stamp in
     try Some (String.Map.find unique_name t.idents_to_types)
-    with Not_found -> begin
-String.Map.iter (fun name _ ->
-  Printf.eprintf "known name '%s'\n%!" name)
-  t.idents_to_types;
-None
-end
+    with Not_found -> None
 
 let cmi_infos t = t.cmi_infos
 let cmt_infos t = t.cmt_infos
