@@ -57,10 +57,18 @@ let print_value addr (stream : Gdb_debugger.stream) dwarf_type summary
     true
 
 let evaluate (path : string) (cmt_file_search_path : string)
-      (stream : Gdb_debugger.stream) =
+      (stream : Gdb_debugger.stream) : _ option =
   let cmt_file_search_path = split_search_path cmt_file_search_path in
   Follow_path.evaluate follow_path ~path ~must_be_mutable:false
     ~cmt_file_search_path ~formatter:(Gdb_debugger.formatter stream)
+    ~lvalue_or_rvalue:Follow_path.Rvalue
+
+type parse_result =
+  | Success
+  | Failure
+
+let parse (path : string) : parse_result =
+  if Follow_path.path_looks_ok ~path then Success else Failure
 
 let demangle ~mangled_name =
   (* CR mshinwell: this needs revisiting. *)
@@ -69,4 +77,5 @@ let demangle ~mangled_name =
 let () =
   Callback.register "From_gdb_ocaml.print_value" print_value;
   Callback.register "From_gdb_ocaml.demangle" demangle;
-  Callback.register "From_gdb_ocaml.evaluate" evaluate
+  Callback.register "From_gdb_ocaml.evaluate" evaluate;
+  Callback.register "From_gdb_ocaml.parse" parse

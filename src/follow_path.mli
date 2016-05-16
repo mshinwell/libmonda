@@ -35,6 +35,8 @@ module Make (D : Debugger.S) : sig
 
   val create : cmt_cache:Cmt_cache.t -> t
 
+  val path_looks_ok : path:string -> bool
+
   type _ lvalue_or_rvalue =
     | Lvalue : D.target_addr lvalue_or_rvalue
     | Rvalue : D.Obj.t lvalue_or_rvalue

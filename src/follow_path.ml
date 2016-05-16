@@ -101,6 +101,11 @@ module Make (D : Debugger.S) = struct
         if starts_with_capital name then Some (Module { name; next; })
         else Some (Variable { name; next; })
 
+  let path_looks_ok ~path =
+    match parse ~path with
+    | None -> false
+    | Some _ -> true
+
   type _ lvalue_or_rvalue =
     | Lvalue : D.target_addr lvalue_or_rvalue
     | Rvalue : D.Obj.t lvalue_or_rvalue
@@ -132,6 +137,7 @@ module Make (D : Debugger.S) = struct
              M.constant *)
           None
         | Record { field_name; next; } ->
+Printf.printf "Record field '%s'\n%!" field_name;
           begin match oracle_result with
           | Record (_path, params, args, fields, _record_repr, env) ->
             let fields = Array.of_list fields in

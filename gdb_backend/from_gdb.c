@@ -106,11 +106,34 @@ print_as_c:
   CAMLreturn0;
 }
 
-value
-monda_evaluate (char* expr, int length)
+int
+monda_parse (const char* expr, int length)
+{
+  value v_expr;
+  static value* cb = NULL;
+
+  if (cb == NULL) {
+    cb = caml_named_value ("From_gdb_ocaml.parse");
+    assert(cb != NULL);
+  }
+
+  v_expr = caml_alloc_string(length);
+  memcpy(String_val(v_expr), expr, length);
+
+  if (caml_callback(*cb, v_expr) == Val_true) {
+    /* Failure */
+    return 1;
+  }
+
+  return 0;
+}
+
+CORE_ADDR
+monda_evaluate (const char* expr, int length)
 {
   CAMLparam0();
   CAMLlocal2(v_stream, v_expr);
+  value v_result;
   static value* cb = NULL;
 
   if (cb == NULL) {
@@ -120,12 +143,21 @@ monda_evaluate (char* expr, int length)
 
   v_expr = caml_alloc_string(length);
   memcpy(String_val(v_expr), expr, length);
+printf("monda_evaluate: '%s'\n%!", String_val(v_expr));fflush(stdout);
 
   v_stream = caml_copy_int64((uint64_t) stderr_fileopen());
 
-  return caml_callback3(*cb, v_expr,
+  v_result = caml_callback3(*cb, v_expr,
     caml_copy_string(search_path ? search_path : ""),
     v_stream);
+
+  if (v_result == Val_unit /* None */) {
+    return (CORE_ADDR) 0;  /* CR mshinwell: suboptimal? */
+  }
+printf("monda_evaluate is returning %p\n", (void*)Field(v_result, 0));
+fflush(stdout);
+
+  return (CORE_ADDR) Field(v_result, 0);
 }
 
 char*
