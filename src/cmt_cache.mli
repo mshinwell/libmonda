@@ -44,3 +44,9 @@ val load
   -> t
   -> leafname:string
   -> Cmt_file.t option
+
+val cache_type : t -> type_expr:Types.type_expr -> env:Env.t -> string
+val find_cached_type
+   : t
+  -> cached_type:string
+  -> (Types.type_expr * Env.t) option

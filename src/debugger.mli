@@ -89,6 +89,9 @@ module type S = sig
 
     (** Return the raw value. *)
     val raw : t -> Nativeint.t
+
+    (** Print the raw value as hex. *)
+    val print : Format.formatter -> t -> unit
   end
 
   module Target_memory : sig
@@ -138,7 +141,10 @@ module type S = sig
 
   (** Attempt to resolve a name (e.g. the name of a parameter or
       let-bound variable) to a value and its DWARF type. *)
-  val find_named_value : name:string -> (Obj.t * string) option
+  type find_named_value_result =
+    | Not_found
+    | Found of Obj.t * string
+  val find_named_value : name:string -> find_named_value_result
 
   type stream
 

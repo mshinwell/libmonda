@@ -116,6 +116,10 @@ end = struct
     = "_native_only" "monda_find_pc_line"
 end
 
+type find_named_value_result =
+  | Not_found
+  | Found of obj * string
+
 module Gdb_indirect = struct
   (* Bindings to gdb via C stubs in to_gdb.c. *)
 
@@ -124,10 +128,9 @@ module Gdb_indirect = struct
     -> string list
     = "monda_compilation_directories_for_source_file"
 
-
   external find_named_value
      : name:string
-    -> (obj * string) option
+    -> find_named_value_result
     = "monda_find_named_value"
 end
 
@@ -237,6 +240,9 @@ module Obj = struct
     String.sub buf 0 size
 
   let raw t = t
+
+  let print ppf t =
+    Format.fprintf ppf "0x%nx" t
 end
 
 let symbol_at_pc pc =

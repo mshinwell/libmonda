@@ -521,9 +521,16 @@ module Make (D : Debugger.S) = struct
 
   let print t ~scrutinee ~dwarf_type ~summary ~max_depth
         ~cmt_file_search_path ~formatter =
+(*
+Format.printf "Value_printer.print %a type %s\n%!"
+  D.Obj.print scrutinee dwarf_type;
+*)
     let type_of_ident =
-      Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
-        ~cmt_cache:t.cmt_cache ~cmt_file_search_path
+      match Cmt_cache.find_cached_type t.cmt_cache ~cached_type:dwarf_type with
+      | Some type_expr_and_env -> Some type_expr_and_env
+      | None ->
+        Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
+          ~cmt_cache:t.cmt_cache ~cmt_file_search_path
     in
     if debug then Printf.printf "Value_printer.print entry point\n%!";
     Format.fprintf formatter "@[";

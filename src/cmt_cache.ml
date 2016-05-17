@@ -31,12 +31,16 @@ type t = {
   mutable primary_search_path : string list;
   mutable secondary_search_path : string list;
   cache : (string, Cmt_file.t) Hashtbl.t;
+  mutable cached_type_counter : int;
+  cached_types : (int, Types.type_expr * Env.t) Hashtbl.t;
 }
 
 let create () =
   { primary_search_path = [];
     secondary_search_path = [];
     cache = Hashtbl.create 42;
+    cached_type_counter = 0;
+    cached_types = Hashtbl.create 42;
   }
 
 (* CR mshinwell: check digests of .cmt files *)
@@ -75,3 +79,22 @@ let load ?expected_in_directory t ~leafname =
       | Some cmt ->
         Hashtbl.add t.cache leafname cmt;
         Some cmt
+
+let cache_type t ~type_expr ~env =
+  let id = t.cached_type_counter in
+  t.cached_type_counter <- t.cached_type_counter + 1;
+  assert (not (Hashtbl.mem t.cached_types id));
+  Hashtbl.replace t.cached_types id (type_expr, env);
+  "__ocamlcached " ^ string_of_int id
+
+let find_cached_type t ~cached_type =
+  match Misc.Stdlib.String.split cached_type ~on:' ' with
+  | ["__ocamlcached"; id] ->
+    begin match int_of_string id with
+    | exception _ -> None
+    | id ->
+      match Hashtbl.find t.cached_types id with
+      | exception _ -> None
+      | type_expr_and_env -> Some type_expr_and_env
+    end
+  | _ -> None

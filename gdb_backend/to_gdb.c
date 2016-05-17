@@ -124,9 +124,7 @@ find_named_value_callback(const char* name, struct symbol* sym,
       void* user_data)
 {
   find_named_value_data* output = (find_named_value_data*) user_data;
-printf("fnvc\n");fflush(stdout);
   if (!output->found_value) {
-printf("fnvc: name=%s, wanted=%s\n", name, output->name_to_find);
     if (!strcmp(name, output->name_to_find)) {
       switch (output->stage) {
         case ARGUMENTS: {
@@ -142,18 +140,20 @@ printf("fnvc: name=%s, wanted=%s\n", name, output->name_to_find);
           if (entry_arg.error) {
             xfree(entry_arg.error);
           }
+          break;
         }
 
         case LOCALS: {
           struct value* local;
           local = read_var_value(sym, output->block, output->frame);
           if (local) {
-            output->found_value = (intnat) value_as_address(local);
+            output->found_value = local;
           }
+          break;
         }
 
         default:
-          assert(0);
+          gdb_assert(0);
       }
     }
   }
@@ -162,52 +162,56 @@ printf("fnvc: name=%s, wanted=%s\n", name, output->name_to_find);
 CAMLprim value
 monda_find_named_value(value v_name)
 {
-  /* Search arguments and local variables of the current frame to find a
+  /* Search arguments and local variables of the selected frame to find a
      value with the given name. */
 
   CAMLparam0();
   CORE_ADDR pc;
   static value *callback = NULL;
-  struct frame_info* current_frame;
-  struct symbol* current_function = NULL;
+  struct frame_info* selected_frame;
+  struct symbol* function;
+  const struct block* block;
   find_named_value_data output;
   CAMLlocal2(v_found_value, v_dwarf_type);
   value v_option;
 
-  current_frame = get_current_frame();
-printf("MFNV A\n");fflush(stdout);
-  if (get_frame_pc_if_available(current_frame, &pc)) {
-printf("MFNV B\n");fflush(stdout);
-    current_function = get_frame_function(current_frame);
-    if (current_function != NULL) {
-printf("MFNV C\n");fflush(stdout);
-      output.name_to_find = String_val(v_name);
-      output.frame = current_frame;
-      output.block = SYMBOL_BLOCK_VALUE(current_function);
-      output.found_value = NULL;
-      output.stage = ARGUMENTS;
-      iterate_over_block_arg_vars(output.block,
-        find_named_value_callback, &output);
-      if (!output.found_value) {
-printf("MFNV D\n");fflush(stdout);
+  selected_frame = get_selected_frame_if_set();
+  if (selected_frame != NULL) {
+    if (get_frame_pc_if_available(selected_frame, &pc)) {
+      block = get_frame_block(selected_frame, NULL);
+      if (block != NULL) {
+        output.name_to_find = String_val(v_name);
+        output.frame = selected_frame;
+        output.block = block;
+        output.found_value = NULL;
         output.stage = LOCALS;
         iterate_over_block_local_vars(output.block,
           find_named_value_callback, &output);
+        if (!output.found_value) {
+          function = get_frame_function(selected_frame);
+          if (function != NULL) {
+            block = SYMBOL_BLOCK_VALUE(function);
+            output.block = block;
+            output.stage = ARGUMENTS;
+            iterate_over_block_arg_vars(output.block,
+              find_named_value_callback, &output);
+          }
+        }
       }
     }
   }
 
   if (!output.found_value) {
-printf("monda_find_named_value returned None\n");fflush(stdout);
-    return Val_unit;  /* None */
+    CAMLreturn(Val_unit);  /* None */
   }
 
   v_found_value = caml_copy_nativeint(value_as_address(output.found_value));
   v_dwarf_type = caml_copy_string(
     TYPE_NAME(value_type(output.found_value)));
 
-  v_option = caml_alloc_small(2, 0 /* Some */);
+  v_option = caml_alloc_small(2, 0 /* Found */);
   Field(v_option, 0) = v_found_value;
   Field(v_option, 1) = v_dwarf_type;
-  return v_option;
+
+  CAMLreturn(v_option);
 }

@@ -39,7 +39,7 @@ module Make (D : Debugger.S) : sig
 
   type _ lvalue_or_rvalue =
     | Lvalue : D.target_addr lvalue_or_rvalue
-    | Rvalue : D.Obj.t lvalue_or_rvalue
+    | Rvalue : (D.Obj.t * Types.type_expr * Env.t) lvalue_or_rvalue
 
   val evaluate
      : t

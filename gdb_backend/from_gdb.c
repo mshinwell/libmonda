@@ -79,8 +79,10 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   }
 
   v_value = caml_copy_nativeint(*(intnat*) valaddr);
-/*fprintf(stderr, "monda_val_print.  valaddr=%p *valaddr=%p\n",
-  (void*) valaddr, *(void**) valaddr);*/
+/*
+fprintf(stderr, "monda_val_print.  valaddr=%p *valaddr=%p\n",
+  (void*) valaddr, *(void**) valaddr);
+*/
 
   if (TYPE_NAME(type) == NULL) {
     goto print_as_c;
@@ -129,7 +131,7 @@ monda_parse (const char* expr, int length)
 }
 
 CORE_ADDR
-monda_evaluate (const char* expr, int length)
+monda_evaluate (const char* expr, int length, char** type_name_out)
 {
   CAMLparam0();
   CAMLlocal2(v_stream, v_expr);
@@ -143,7 +145,6 @@ monda_evaluate (const char* expr, int length)
 
   v_expr = caml_alloc_string(length);
   memcpy(String_val(v_expr), expr, length);
-printf("monda_evaluate: '%s'\n", String_val(v_expr));fflush(stdout);
 
   v_stream = caml_copy_int64((uint64_t) stderr_fileopen());
 
@@ -151,13 +152,20 @@ printf("monda_evaluate: '%s'\n", String_val(v_expr));fflush(stdout);
     caml_copy_string(search_path ? search_path : ""),
     v_stream);
 
-  if (v_result == Val_unit /* None */) {
+  if (v_result == Val_unit /* Failure */) {
     return (CORE_ADDR) 0;  /* CR mshinwell: suboptimal? */
   }
-printf("monda_evaluate is returning %p\n", (void*)Field(v_result, 0));
-fflush(stdout);
 
-  return (CORE_ADDR) Field(v_result, 0);
+/*
+printf("monda_evaluate is returning %p, type name '%s'\n",
+  (void*)Nativeint_val(Field(v_result, 0)),
+  String_val(Field(v_result, 1)));
+fflush(stdout);
+*/
+
+  *type_name_out = xstrdup(String_val(Field(v_result, 1)));
+
+  return (CORE_ADDR) Nativeint_val(Field(v_result, 0));
 }
 
 char*

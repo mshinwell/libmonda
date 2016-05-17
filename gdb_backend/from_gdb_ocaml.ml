@@ -43,9 +43,14 @@ let print_value addr (stream : Gdb_debugger.stream) dwarf_type summary
   (* When doing e.g. "inf reg", gdb passes "int64_t" as the type to print
      at.  Since we can't yet print out-of-heap values etc, don't try to
      be fancy here. *)
-  match Name_laundry.split_base_type_die_name dwarf_type with
-  | None -> false
-  | Some _ ->
+  let can_print =
+    Name_laundry.split_base_type_die_name dwarf_type <> None
+      || Cmt_cache.find_cached_type cmt_cache ~cached_type:dwarf_type
+           <> None
+  in
+  if not can_print then begin
+    false
+  end else begin
     let cmt_file_search_path = split_search_path cmt_file_search_path in
     Our_value_printer.print value_printer
       ~scrutinee:addr
@@ -55,13 +60,28 @@ let print_value addr (stream : Gdb_debugger.stream) dwarf_type summary
       ~max_depth
       ~cmt_file_search_path;
     true
+  end
+
+type evaluate_result =
+  | Failure
+  | Ok of { rvalue : Gdb_debugger.Obj.t; type_name : string; }
 
 let evaluate (path : string) (cmt_file_search_path : string)
-      (stream : Gdb_debugger.stream) : _ option =
+      (stream : Gdb_debugger.stream) : evaluate_result =
   let cmt_file_search_path = split_search_path cmt_file_search_path in
-  Follow_path.evaluate follow_path ~path ~must_be_mutable:false
-    ~cmt_file_search_path ~formatter:(Gdb_debugger.formatter stream)
-    ~lvalue_or_rvalue:Follow_path.Rvalue
+  match
+    Follow_path.evaluate follow_path ~path ~must_be_mutable:false
+      ~cmt_file_search_path ~formatter:(Gdb_debugger.formatter stream)
+      ~lvalue_or_rvalue:Follow_path.Rvalue
+  with
+  | None -> Failure
+  | Some (rvalue, type_expr, env) ->
+    let type_name = Cmt_cache.cache_type cmt_cache ~type_expr ~env in
+(*
+Format.eprintf "From_gdb_ocaml.evaluate returning %a type '%s'\n%!"
+  Gdb_debugger.Obj.print rvalue type_name;
+*)
+    Ok { rvalue; type_name; }
 
 type parse_result =
   | Success

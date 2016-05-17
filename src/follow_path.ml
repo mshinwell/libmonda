@@ -108,7 +108,7 @@ module Make (D : Debugger.S) = struct
 
   type _ lvalue_or_rvalue =
     | Lvalue : D.target_addr lvalue_or_rvalue
-    | Rvalue : D.Obj.t lvalue_or_rvalue
+    | Rvalue : (D.Obj.t * Types.type_expr * Env.t) lvalue_or_rvalue
 
   let evaluate_given_starting_point (type obj_or_addr) t ~path
         ~type_expr_and_env ~(lvalue_or_rvalue : obj_or_addr lvalue_or_rvalue)
@@ -126,19 +126,17 @@ module Make (D : Debugger.S) = struct
         match path with
         | Identity ->
           if must_be_mutable && (not previous_was_mutable) then begin
-Printf.printf "XX\n%!";
             None
           end else begin
             match lvalue_or_rvalue with
             | Lvalue -> address_of_v
-            | Rvalue -> Some v
+            | Rvalue -> Some (v, type_expr, env)
           end
         | Module _ ->
           (* CR-soon mshinwell: fill this in for toplevel accesses, e.g.
              M.constant *)
           None
         | Record { field_name; next; } ->
-Printf.printf "Record field '%s'\n%!" field_name;
           begin match oracle_result with
           | Record (_path, params, args, fields, _record_repr, env) ->
             let fields = Array.of_list fields in
@@ -150,7 +148,7 @@ Printf.printf "Record field '%s'\n%!" field_name;
               end
             done;
             begin match !found with
-            | None -> Printf.printf "X\n%!"; None
+            | None -> None
             | Some (index, decl) ->
               if (not (D.Obj.is_block v))
                 || D.Obj.size_exn v <= index
@@ -213,11 +211,11 @@ Printf.printf "Record field '%s'\n%!" field_name;
     | None -> None
     | Some path ->
       match path with
-      | Module _ -> Printf.printf "AA\n%!"; None  (* CR mshinwell: to do *)
+      | Module _ -> None  (* CR mshinwell: to do *)
       | Variable { name; next = rest_of_path; } ->
         match D.find_named_value ~name with
-        | None -> Printf.printf "A\n%!"; None
-        | Some (starting_point, dwarf_type) ->
+        | Not_found -> None
+        | Found (starting_point, dwarf_type) ->
           let type_expr_and_env =
             Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
               ~cmt_cache:t.cmt_cache ~cmt_file_search_path
