@@ -161,34 +161,35 @@ find_named_value_callback(const char* name, struct symbol* sym,
 CAMLprim value
 monda_find_named_value(value v_name)
 {
-  /* Search arguments and local variables of the current frame to find a
+  /* Search arguments and local variables of the selected frame to find a
      value with the given name. */
 
   CAMLparam0();
   CORE_ADDR pc;
   static value *callback = NULL;
-  struct frame_info* current_frame;
-  struct symbol* current_function = NULL;
+  struct frame_info* selected_frame;
+  const struct block* block;
   find_named_value_data output;
   CAMLlocal2(v_found_value, v_dwarf_type);
   value v_option;
 
-  current_frame = get_current_frame();
-
-  if (get_frame_pc_if_available(current_frame, &pc)) {
-    current_function = get_frame_function(current_frame);
-    if (current_function != NULL) {
-      output.name_to_find = String_val(v_name);
-      output.frame = current_frame;
-      output.block = SYMBOL_BLOCK_VALUE(current_function);
-      output.found_value = NULL;
-      output.stage = ARGUMENTS;
-      iterate_over_block_arg_vars(output.block,
-        find_named_value_callback, &output);
-      if (!output.found_value) {
-        output.stage = LOCALS;
-        iterate_over_block_local_vars(output.block,
+  selected_frame = get_selected_frame_if_set();
+  if (selected_frame != NULL) {
+    if (get_frame_pc_if_available(selected_frame, &pc)) {
+      block = get_frame_block(selected_frame, NULL);
+      if (block != NULL) {
+        output.name_to_find = String_val(v_name);
+        output.frame = current_frame;
+        output.block = block;
+        output.found_value = NULL;
+        output.stage = ARGUMENTS;
+        iterate_over_block_arg_vars(output.block,
           find_named_value_callback, &output);
+        if (!output.found_value) {
+          output.stage = LOCALS;
+          iterate_over_block_local_vars(output.block,
+            find_named_value_callback, &output);
+        }
       }
     }
   }
