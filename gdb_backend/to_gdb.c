@@ -124,8 +124,9 @@ find_named_value_callback(const char* name, struct symbol* sym,
       void* user_data)
 {
   find_named_value_data* output = (find_named_value_data*) user_data;
-
+printf("fnvc\n");fflush(stdout);
   if (!output->found_value) {
+printf("fnvc: name=%s, wanted=%s\n", name, output->name_to_find);
     if (!strcmp(name, output->name_to_find)) {
       switch (output->stage) {
         case ARGUMENTS: {
@@ -174,10 +175,12 @@ monda_find_named_value(value v_name)
   value v_option;
 
   current_frame = get_current_frame();
-
+printf("MFNV A\n");fflush(stdout);
   if (get_frame_pc_if_available(current_frame, &pc)) {
+printf("MFNV B\n");fflush(stdout);
     current_function = get_frame_function(current_frame);
     if (current_function != NULL) {
+printf("MFNV C\n");fflush(stdout);
       output.name_to_find = String_val(v_name);
       output.frame = current_frame;
       output.block = SYMBOL_BLOCK_VALUE(current_function);
@@ -186,6 +189,7 @@ monda_find_named_value(value v_name)
       iterate_over_block_arg_vars(output.block,
         find_named_value_callback, &output);
       if (!output.found_value) {
+printf("MFNV D\n");fflush(stdout);
         output.stage = LOCALS;
         iterate_over_block_local_vars(output.block,
           find_named_value_callback, &output);
@@ -194,6 +198,7 @@ monda_find_named_value(value v_name)
   }
 
   if (!output.found_value) {
+printf("monda_find_named_value returned None\n");fflush(stdout);
     return Val_unit;  /* None */
   }
 

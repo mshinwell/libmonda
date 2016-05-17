@@ -126,6 +126,7 @@ module Make (D : Debugger.S) = struct
         match path with
         | Identity ->
           if must_be_mutable && (not previous_was_mutable) then begin
+Printf.printf "XX\n%!";
             None
           end else begin
             match lvalue_or_rvalue with
@@ -149,7 +150,7 @@ Printf.printf "Record field '%s'\n%!" field_name;
               end
             done;
             begin match !found with
-            | None -> None
+            | None -> Printf.printf "X\n%!"; None
             | Some (index, decl) ->
               if (not (D.Obj.is_block v))
                 || D.Obj.size_exn v <= index
@@ -212,10 +213,10 @@ Printf.printf "Record field '%s'\n%!" field_name;
     | None -> None
     | Some path ->
       match path with
-      | Module _ -> None  (* CR mshinwell: to do *)
+      | Module _ -> Printf.printf "AA\n%!"; None  (* CR mshinwell: to do *)
       | Variable { name; next = rest_of_path; } ->
         match D.find_named_value ~name with
-        | None -> None
+        | None -> Printf.printf "A\n%!"; None
         | Some (starting_point, dwarf_type) ->
           let type_expr_and_env =
             Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type

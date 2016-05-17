@@ -143,7 +143,7 @@ monda_evaluate (const char* expr, int length)
 
   v_expr = caml_alloc_string(length);
   memcpy(String_val(v_expr), expr, length);
-printf("monda_evaluate: '%s'\n%!", String_val(v_expr));fflush(stdout);
+printf("monda_evaluate: '%s'\n", String_val(v_expr));fflush(stdout);
 
   v_stream = caml_copy_int64((uint64_t) stderr_fileopen());
 
