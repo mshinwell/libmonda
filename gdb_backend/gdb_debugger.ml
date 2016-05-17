@@ -33,7 +33,10 @@ type target_addr = nativeint
 external caml_copy_int32 : Obj.t -> Int32.t = "caml_copy_int32"
 external caml_copy_int64 : Obj.t -> Int64.t = "caml_copy_int64"
 external caml_copy_nativeint : Obj.t -> Nativeint.t = "caml_copy_nativeint"
-external caml_copy_double : Obj.t -> float = "caml_copy_double"
+external caml_copy_double
+   : (float [@unboxed])
+  -> float
+  = "_native_only" "caml_copy_double"
 external caml_copy_string : addr:int -> string = "caml_copy_string"
 
 type out_of_heap_buffer = private int
@@ -144,7 +147,8 @@ let copy_nativeint (buf : string) =
   caml_copy_nativeint (Obj.field (Obj.repr buf) 0)
 
 let copy_float (buf : string) =
-  caml_copy_double (Obj.field (Obj.repr buf) 0)
+  (* CR-soon mshinwell: see if this can be done with float_of_bits etc *)
+  caml_copy_double ((Obj.magic buf) : float)
 
 exception Read_error
 

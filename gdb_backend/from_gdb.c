@@ -153,7 +153,7 @@ monda_evaluate (const char* expr, int length, char** type_name_out)
     v_stream);
 
   if (v_result == Val_unit /* Failure */) {
-    return (CORE_ADDR) 0;  /* CR mshinwell: suboptimal? */
+    CAMLreturn((CORE_ADDR) 0);  /* CR mshinwell: suboptimal? */
   }
 
 /*
@@ -165,7 +165,7 @@ fflush(stdout);
 
   *type_name_out = xstrdup(String_val(Field(v_result, 1)));
 
-  return (CORE_ADDR) Nativeint_val(Field(v_result, 0));
+  CAMLreturn((CORE_ADDR) Nativeint_val(Field(v_result, 0)));
 }
 
 char*
