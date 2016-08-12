@@ -29,8 +29,6 @@
 
 [@@@ocaml.warning "+a-4-9-30-40-41-42"]
 
-module Variant_kind = Type_oracle.Variant_kind
-
 module Make (D : Debugger.S) = struct
   module Our_type_oracle = Type_oracle.Make (D)
 
@@ -61,7 +59,7 @@ module Make (D : Debugger.S) = struct
     first_letter = upper_first_letter
 
   let parse ~path : toplevel_parsed option =
-    let split = Misc.Stdlib.String.split path ~on:'.' in
+    let split = String.split_on_char '.' path in
     match split with
     | [] -> None
     | [name] ->

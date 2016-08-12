@@ -88,7 +88,7 @@ let cache_type t ~type_expr ~env =
   "__ocamlcached " ^ string_of_int id
 
 let find_cached_type t ~cached_type =
-  match Misc.Stdlib.String.split cached_type ~on:' ' with
+  match String.split_on_char ' ' cached_type with
   | ["__ocamlcached"; id] ->
     begin match int_of_string id with
     | exception _ -> None

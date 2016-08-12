@@ -141,10 +141,18 @@ and process_expression ~exp ((idents_to_types, app_points) as init) =
   | Texp_tuple expr_list ->
     List.fold_left expr_list ~init ~f:(fun acc exp -> process_expression ~exp acc)
   | Texp_variant (_, Some exp) -> process_expression ~exp init
-  | Texp_record (expr_list, _) ->
-    List.fold_left expr_list ~init ~f:(fun acc (_loc, _desc, exp) ->
-      process_expression ~exp acc
-    )
+  | Texp_record { fields; extended_expression; _ } ->
+    let acc =
+      match extended_expression with
+      | None -> init
+      | Some exp -> process_expression ~exp init
+    in
+    Array.fold_left (fun acc (_, record_label_definition) ->
+        match record_label_definition with
+        | Kept _ -> acc
+        | Overridden (_, exp) -> process_expression ~exp acc)
+      acc
+      fields
   | Texp_ifthenelse (e1, e2, e_opt) ->
     let acc = process_expression ~exp:e1 init in
     let acc = process_expression ~exp:e2 acc in

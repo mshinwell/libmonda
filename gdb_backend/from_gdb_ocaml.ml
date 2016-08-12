@@ -36,7 +36,7 @@ let follow_path = Follow_path.create ~cmt_cache
 let value_printer = Our_value_printer.create ~cmt_cache
 
 let split_search_path path =
-  Misc.Stdlib.String.split path ~on:':'
+  String.split_on_char ':' path
 
 let print_value addr (stream : Gdb_debugger.stream) dwarf_type summary
       max_depth cmt_file_search_path =

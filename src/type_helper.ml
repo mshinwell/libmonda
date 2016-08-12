@@ -29,9 +29,6 @@
 
 [@@@ocaml.warning "+a-4-9-30-40-41-42"]
 
-module List = ListLabels
-module Variant_kind = Type_oracle.Variant_kind
-
 let type_expr_and_env_from_dwarf_type ~dwarf_type ~cmt_cache
       ~cmt_file_search_path =
   Cmt_cache.clear_search_paths cmt_cache;

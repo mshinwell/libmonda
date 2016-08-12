@@ -317,7 +317,8 @@ module Make (D : Debugger.S) = struct
           with Ctype.Cannot_apply -> field_type
           end
         | Types.Record_extension
-        | Types.Record_inlined _ ->
+        | Types.Record_inlined _
+        | Types.Record_unboxed _ ->
           (* CR mshinwell: fix this *)
           Predef.type_int
         end

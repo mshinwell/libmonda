@@ -137,6 +137,9 @@ monda_evaluate (const char* expr, int length, char** type_name_out)
   CAMLlocal2(v_stream, v_expr);
   value v_result;
   static value* cb = NULL;
+/*
+printf("monda_evaluate '%s'\n", expr);fflush(stdout);
+*/
 
   if (cb == NULL) {
     cb = caml_named_value ("From_gdb_ocaml.evaluate");
@@ -155,7 +158,6 @@ monda_evaluate (const char* expr, int length, char** type_name_out)
   if (v_result == Val_unit /* Failure */) {
     CAMLreturn((CORE_ADDR) 0);  /* CR mshinwell: suboptimal? */
   }
-
 /*
 printf("monda_evaluate is returning %p, type name '%s'\n",
   (void*)Nativeint_val(Field(v_result, 0)),
