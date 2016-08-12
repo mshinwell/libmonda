@@ -362,32 +362,33 @@ module Make (D : Debugger.S) = struct
       if state.summary then
         Format.fprintf formatter "<fun>"
       else begin
-        let pc =
+        let partial, pc =
           let pc = D.Obj.field_as_addr_exn v 0 in
           match D.symbol_at_pc pc with
-          | None -> pc
+          | None -> false, pc
           | Some symbol ->
             (* Try to find out the function pointer for the actual function
                in the case that [scrutinee] is actually a currying or
                tuplifying wrapper. *)
             if not (Naming_conventions.is_currying_wrapper symbol) then
-              pc
+              false, pc
             else
               (* The "real" function pointer should be the last entry in the
                  environment of the closure. *)
-              D.Obj.field_as_addr_exn v (D.Obj.size_exn v - 1)
+              true, D.Obj.field_as_addr_exn v (D.Obj.size_exn v - 1)
         in
+        let partial = if partial then "partial " else "" in
         match
           D.filename_and_line_number_of_pc pc
             ~use_previous_line_number_if_on_boundary:true
         with
         | None ->
-          Format.fprintf formatter "<fun> (%a)"
+          Format.fprintf formatter "<%sfun> (%a)" partial
             D.Target_memory.print_addr pc
         | Some (filename, Some line) ->
-          Format.fprintf formatter "<fun> (%s:%d)" filename line
+          Format.fprintf formatter "<%sfun> (%s:%d)" partial filename line
         | Some (filename, None) ->
-          Format.fprintf formatter "<fun> (%s, %a)" filename
+          Format.fprintf formatter "<%sfun> (%s, %a)" partial filename
             D.Target_memory.print_addr pc
       end
     with D.Read_error -> Format.fprintf formatter "<closure?>"
@@ -522,10 +523,10 @@ module Make (D : Debugger.S) = struct
 
   let print t ~scrutinee ~dwarf_type ~summary ~max_depth
         ~cmt_file_search_path ~formatter =
-(*
-Format.printf "Value_printer.print %a type %s\n%!"
-  D.Obj.print scrutinee dwarf_type;
-*)
+    if debug then begin
+      Format.printf "Value_printer.print %a type %s\n%!"
+        D.Obj.print scrutinee dwarf_type
+    end;
     let type_of_ident =
       match Cmt_cache.find_cached_type t.cmt_cache ~cached_type:dwarf_type with
       | Some type_expr_and_env -> Some type_expr_and_env

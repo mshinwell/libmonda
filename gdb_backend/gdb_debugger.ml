@@ -56,6 +56,10 @@ external caml_copy_string_from_out_of_heap_buffer
   -> string
   = "caml_copy_string"
 
+let dereference_out_of_heap_buffer (buf : out_of_heap_buffer)
+      : out_of_heap_buffer =
+  Obj.magic (Array.unsafe_get ((Obj.magic buf) : int array) 0)
+
 module Gdb : sig
   (* Bindings directly to gdb. *)
 
@@ -261,7 +265,9 @@ let symbol_at_pc pc =
   caml_stat_free func_end;
   let result =
     if result = 0 then None
-    else Some (caml_copy_string_from_out_of_heap_buffer function_name)
+    else
+      Some (caml_copy_string_from_out_of_heap_buffer
+        (dereference_out_of_heap_buffer function_name))
   in
   caml_stat_free function_name;
   result
