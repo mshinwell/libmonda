@@ -363,33 +363,60 @@ module Make (D : Debugger.S) = struct
         Format.fprintf formatter "<fun>"
       else begin
         let partial, pc =
-          let pc = D.Obj.field_as_addr_exn v 0 in
-          match D.symbol_at_pc pc with
-          | None -> false, pc
-          | Some symbol ->
-            (* Try to find out the function pointer for the actual function
-               in the case that [scrutinee] is actually a currying or
-               tuplifying wrapper. *)
-            if not (Naming_conventions.is_currying_wrapper symbol) then
-              false, pc
-            else
-              (* The "real" function pointer should be the last entry in the
-                 environment of the closure. *)
-              true, D.Obj.field_as_addr_exn v (D.Obj.size_exn v - 1)
+          let arity = D.Obj.int (D.Obj.field_exn v 1) in
+          if arity < 2 then
+            None, D.Obj.field_as_addr_exn v 0
+          else
+            let pc = D.Obj.field_as_addr_exn v 2 in
+            (* Try to determine if the closure corresponds to a
+               partially-applied function. *)
+            match D.symbol_at_pc pc with
+            | None -> None, pc
+            | Some symbol ->
+              match Naming_conventions.is_currying_wrapper symbol with
+              | None -> None, pc
+              | Some (total_num_args, num_args_so_far) ->
+                (* Find the original closure in order to determine which
+                   function is partially applied.  (See comments about currying
+                   functions in cmmgen.ml in the compiler source.) *)
+                match begin
+                  let v = ref v in
+                  for _i = 1 to num_args_so_far do
+                    if D.Obj.size_exn !v <> 5 then raise Exit;
+                    v := D.Obj.field_exn !v 4;
+                    if D.Obj.size_exn !v <> 5 then raise Exit
+                  done;
+                  !v
+                end with
+                | exception Exit -> None, pc
+                | v ->
+                  (* This should be the original function. *)
+                  if D.Obj.int (D.Obj.field_exn v 1) <= 1 then
+                    None, pc  (* The function should have more than 1 arg. *)
+                  else
+                    Some (total_num_args, num_args_so_far),
+                      D.Obj.field_as_addr_exn v 2
         in
-        let partial = if partial then "partial " else "" in
+        let partial, partial_args =
+          match partial with
+          | None -> "", ""
+          | Some (total_num_args, args_so_far) ->
+            "partial ",
+              Printf.sprintf " (got %d of %d args)" args_so_far total_num_args
+        in
         match
           D.filename_and_line_number_of_pc pc
             ~use_previous_line_number_if_on_boundary:true
         with
         | None ->
-          Format.fprintf formatter "<%sfun> (%a)" partial
-            D.Target_memory.print_addr pc
+          Format.fprintf formatter "<%sfun> (%a)%s" partial
+            D.Target_memory.print_addr pc partial_args
         | Some (filename, Some line) ->
-          Format.fprintf formatter "<%sfun> (%s:%d)" partial filename line
+          Format.fprintf formatter "<%sfun> (%s:%d)%s" partial filename line
+            partial_args
         | Some (filename, None) ->
-          Format.fprintf formatter "<%sfun> (%s, %a)" partial filename
-            D.Target_memory.print_addr pc
+          Format.fprintf formatter "<%sfun> (%s, %a)%s" partial filename
+            D.Target_memory.print_addr pc partial_args
       end
     with D.Read_error -> Format.fprintf formatter "<closure?>"
 
@@ -516,6 +543,16 @@ module Make (D : Debugger.S) = struct
       | Systhreads_condition ->
         Format.fprintf formatter "<Condition.t %a> (* systhreads *)"
           D.Target_memory.print_addr data_ptr
+      | Int32 ->
+        Format.fprintf formatter "%ld : int32"
+          (D.Target_memory.read_int32_exn data_ptr)
+      | Int64 ->
+        Format.fprintf formatter "%Ld : int64"
+          (D.Target_memory.read_int64_exn data_ptr)
+      | Channel ->
+        (* CR mshinwell: use a better means of retrieving the fd *)
+        Format.fprintf formatter "<channel on fd %Ld>"
+          (D.Target_memory.read_int64_exn data_ptr)
       | Unknown ->
         Format.fprintf formatter "<custom block '%s' pointing at %a>"
           identifier

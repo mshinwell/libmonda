@@ -31,21 +31,41 @@ let is_currying_wrapper name =
   (* CR mshinwell: share names with compilerlibs directly.
      Also add Misc.Stdlib.String.is_prefix *)
   let curry = "caml_curry" in
-  let tuplify = "caml_tuplify" in
   let curry_length = min (String.length name) (String.length curry) in
-  let tuplify_length = min (String.length name) (String.length tuplify) in
-  (* CR mshinwell: this could maybe be made more precise *)
-  String.sub name 0 curry_length = curry
-    || String.sub name 0 tuplify_length = tuplify
+  if String.sub name 0 curry_length <> curry
+    || String.length name < curry_length + 3
+  then begin
+    None
+  end else begin
+    let remainder =
+      String.sub name curry_length (String.length name - curry_length)
+    in
+    match String.split_on_char '_' remainder with
+    | [total_num_args; num_args_so_far] ->
+      begin
+      try
+        let total_num_args = int_of_string total_num_args in
+        let num_args_so_far = int_of_string num_args_so_far in
+        Some (total_num_args, num_args_so_far)
+      with _ -> None
+      end
+    | _ -> None
+  end
 
 type custom_block_identifier =
   | Bigarray
   | Systhreads_mutex
   | Systhreads_condition
+  | Int32
+  | Int64
+  | Channel
   | Unknown
 
 let examine_custom_block_identifier = function
   | "_bigarray" -> Bigarray
   | "_mutex" -> Systhreads_mutex
   | "_condition" -> Systhreads_condition
+  | "_i" -> Int32
+  | "_j" -> Int64
+  | "_chan" -> Channel
   | _ -> Unknown

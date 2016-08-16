@@ -105,13 +105,11 @@ module type S = sig
     (** Like [read_value_exn], but returns a [target_addr]. *)
     val read_addr_exn : ?offset_in_words:int -> target_addr -> target_addr
 
-(*
     (** Read the [Int32.t] in the target's memory at the given address. *)
     val read_int32_exn : target_addr -> Int32.t
 
     (** Read the [Int64.t] in the target's memory at the given address. *)
     val read_int64_exn : target_addr -> Int64.t
-*)
 
     (** Read the float in the target's memory at the given address. *)
     val read_float_exn : target_addr -> float

@@ -29,12 +29,15 @@
 
 (** Naming conventions used in the compiler. *)
 
-val is_currying_wrapper : string -> bool
+val is_currying_wrapper : string -> (int * int) option
 
 type custom_block_identifier =
   | Bigarray
   | Systhreads_mutex
   | Systhreads_condition
+  | Int32
+  | Int64
+  | Channel
   | Unknown
 
 val examine_custom_block_identifier : string -> custom_block_identifier

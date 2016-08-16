@@ -179,6 +179,14 @@ module Target_memory = struct
 
   let read_addr_exn = read_value_exn
 
+  let read_int32_exn addr =
+    read_exn addr priv_buf 4;
+    copy_int32 priv_buf
+
+  let read_int64_exn addr =
+    read_exn addr priv_buf 8;
+    copy_int64 priv_buf
+
   let read_float_exn addr =
     read_exn addr priv_buf 8;
     copy_float priv_buf
