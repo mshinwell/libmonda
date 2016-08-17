@@ -247,8 +247,14 @@ module Make (D : Debugger.S) = struct
         let module_component_path =
           String.concat "." (module_names @ [module_component])
         in
+        (* CR mshinwell: Think again about the name of find_global_symbol *)
+        (* Note that [find_global_symbol] always returns an rvalue, even in
+           the case of inconstant ("Initialize_symbol") bindings.  (See
+           comments in asmcomp/debug/dwarf.ml in the compiler.) *)
         match D.find_global_symbol ~name:module_component_path with
         | Not_found -> None
         | Found (starting_point, dwarf_type) ->
+Format.eprintf "starting_point %a type %s\n%!" D.Obj.print starting_point
+  dwarf_type;
           found ~starting_point ~dwarf_type ~rest_of_path
 end

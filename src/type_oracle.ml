@@ -319,7 +319,9 @@ module Make (D : Debugger.S) = struct
 
   let find_type_information t ~formatter ~type_expr_and_env ~scrutinee =
     if debug then begin
-      Printf.printf "find_type_information starting, type info present? %s\n%!"
+      Format.printf "find_type_information starting (scrutinee %a), \
+          type info present? %s\n%!"
+        D.Obj.print scrutinee
         (match type_expr_and_env with None -> "no" | Some _ -> "yes")
     end;
     let load_path = !Config.load_path in

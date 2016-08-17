@@ -219,27 +219,58 @@ monda_find_named_value(value v_name)
 CAMLprim value
 monda_find_global_symbol(value v_name)
 {
-  /* Search for a global symbol with the given name. */
+  /* Search for a global "symbol" with the given name.  The name is one as
+     written into DW_AT_name for toplevel constant and inconstant identifiers.
+   */
 
   CAMLparam0();
   CAMLlocal2(v_found_value, v_dwarf_type);
   value v_option;
   struct block_symbol sym;
+  uint64_t sym_value;
 
   sym = lookup_symbol(String_val(v_name), NULL, VAR_DOMAIN, NULL);
 
   if (!sym.symbol) {
-/*    fprintf(stderr, "%s not found from gdb\n", String_val(v_name));*/
+    /*fprintf(stderr, "%s not found from gdb\n", String_val(v_name));*/
     CAMLreturn(Val_unit);  /* None */
   }
 
-  /*
+  switch (SYMBOL_CLASS(sym.symbol)) {
+    case LOC_CONST:  /* Let_symbol / constant case */
+      sym_value = SYMBOL_VALUE(sym.symbol);
+      break;
+
+    case LOC_COMPUTED: { /* Initialize_symbol / inconstant case */
+      value* v;
+
+      if (SYMBOL_COMPUTED_OPS(sym.symbol)->read_needs_frame(sym.symbol)
+            || SYMBOL_COMPUTED_OPS(sym.symbol)->location_has_loclist) {
+        /* We jolly well shouldn't need a frame; we should also not be
+           PC-dependent (i.e. no location list). */
+        CAMLreturn(Val_unit);
+      }
+
+      v = SYMBOL_COMPUTED_OPS(sym.symbol)->read_variable(sym.symbol, NULL);
+      if (v == NULL) {
+        CAMLreturn(Val_unit);
+      }
+
+      sym_value = (uint64_t) value_as_address(v);
+
+      break;
+    }
+
+    default:
+      CAMLreturn(Val_unit);
+  }
+
   fprintf(stderr, "%s found to have value %p, type %s\n",
           String_val(v_name),
           SYMBOL_VALUE_ADDRESS(sym.symbol),
-          TYPE_NAME(SYMBOL_TYPE(sym.symbol)));*/
+          TYPE_NAME(SYMBOL_TYPE(sym.symbol)));
 
-  v_found_value = caml_copy_nativeint(SYMBOL_VALUE_ADDRESS(sym.symbol));
+  v_found_value = caml_copy_nativeint(sym_value);
   v_dwarf_type = caml_copy_string(
     TYPE_NAME(SYMBOL_TYPE(sym.symbol)));
 
