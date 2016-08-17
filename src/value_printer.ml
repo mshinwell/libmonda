@@ -367,10 +367,11 @@ module Make (D : Debugger.S) = struct
           if arity < 2 then
             None, D.Obj.field_as_addr_exn v 0
           else
+            let partial_app_pc = D.Obj.field_as_addr_exn v 0 in
             let pc = D.Obj.field_as_addr_exn v 2 in
             (* Try to determine if the closure corresponds to a
                partially-applied function. *)
-            match D.symbol_at_pc pc with
+            match D.symbol_at_pc partial_app_pc with
             | None -> None, pc
             | Some symbol ->
               match Naming_conventions.is_currying_wrapper symbol with
@@ -383,8 +384,7 @@ module Make (D : Debugger.S) = struct
                   let v = ref v in
                   for _i = 1 to num_args_so_far do
                     if D.Obj.size_exn !v <> 5 then raise Exit;
-                    v := D.Obj.field_exn !v 4;
-                    if D.Obj.size_exn !v <> 5 then raise Exit
+                    v := D.Obj.field_exn !v 4
                   done;
                   !v
                 end with
