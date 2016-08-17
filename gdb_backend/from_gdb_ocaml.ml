@@ -77,10 +77,6 @@ let evaluate (path : string) (cmt_file_search_path : string)
   | None -> Failure
   | Some (rvalue, type_expr, env) ->
     let type_name = Cmt_cache.cache_type cmt_cache ~type_expr ~env in
-(*
-Format.eprintf "From_gdb_ocaml.evaluate returning %a type '%s'\n%!"
-  Gdb_debugger.Obj.print rvalue type_name;
-*)
     Ok { rvalue; type_name; }
 
 type parse_result =

@@ -104,6 +104,22 @@ module Make (D : Debugger.S) = struct
     | None -> false
     | Some _ -> true
 
+  let strip_module_component_prefix (path : toplevel_parsed) =
+    match path with
+    | Variable _ -> None
+    | Module { name; next; } ->
+      let rec strip (path : parsed) ~names =
+        match path with
+        | Module { name; next; } ->
+          strip next ~names:(name::names)
+        | Record { field_name; next; } ->
+          (* This will actually be the "foo" in "M.foo" or "M.N.foo". *)
+          Some (List.rev names, field_name, next)
+        | Identity
+        | Indexed _ -> None
+      in
+      strip next ~names:[name]
+
   type _ lvalue_or_rvalue =
     | Lvalue : D.target_addr lvalue_or_rvalue
     | Rvalue : (D.Obj.t * Types.type_expr * Env.t) lvalue_or_rvalue
@@ -205,20 +221,34 @@ module Make (D : Debugger.S) = struct
 
   let evaluate t ~path ~lvalue_or_rvalue ~must_be_mutable
         ~cmt_file_search_path ~formatter =
+    let found ~starting_point ~dwarf_type ~rest_of_path =
+      let type_expr_and_env =
+        Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
+          ~cmt_cache:t.cmt_cache ~cmt_file_search_path
+      in
+      evaluate_given_starting_point t ~path:rest_of_path
+        ~type_expr_and_env ~lvalue_or_rvalue ~must_be_mutable
+        ~formatter starting_point
+    in
     match parse ~path with
     | None -> None
     | Some path ->
-      match path with
-      | Module _ -> None  (* CR mshinwell: to do *)
-      | Variable { name; next = rest_of_path; } ->
-        match D.find_named_value ~name with
+      match strip_module_component_prefix path with
+      | None ->
+        begin match path with
+        | Module _ -> None
+        | Variable { name; next = rest_of_path; } ->
+          match D.find_named_value ~name with
+          | Not_found -> None
+          | Found (starting_point, dwarf_type) ->
+            found ~starting_point ~dwarf_type ~rest_of_path
+        end
+      | Some (module_names, module_component, rest_of_path) ->
+        let module_component_path =
+          String.concat "." (module_names @ [module_component])
+        in
+        match D.find_global_symbol ~name:module_component_path with
         | Not_found -> None
         | Found (starting_point, dwarf_type) ->
-          let type_expr_and_env =
-            Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
-              ~cmt_cache:t.cmt_cache ~cmt_file_search_path
-          in
-          evaluate_given_starting_point t ~path:rest_of_path
-            ~type_expr_and_env ~lvalue_or_rvalue ~must_be_mutable
-            ~formatter starting_point
+          found ~starting_point ~dwarf_type ~rest_of_path
 end

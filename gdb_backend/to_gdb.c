@@ -215,3 +215,37 @@ monda_find_named_value(value v_name)
 
   CAMLreturn(v_option);
 }
+
+CAMLprim value
+monda_find_global_symbol(value v_name)
+{
+  /* Search for a global symbol with the given name. */
+
+  CAMLparam0();
+  CAMLlocal2(v_found_value, v_dwarf_type);
+  value v_option;
+  struct block_symbol sym;
+
+  sym = lookup_symbol(String_val(v_name), NULL, VAR_DOMAIN, NULL);
+
+  if (!sym.symbol) {
+/*    fprintf(stderr, "%s not found from gdb\n", String_val(v_name));*/
+    CAMLreturn(Val_unit);  /* None */
+  }
+
+  /*
+  fprintf(stderr, "%s found to have value %p, type %s\n",
+          String_val(v_name),
+          SYMBOL_VALUE_ADDRESS(sym.symbol),
+          TYPE_NAME(SYMBOL_TYPE(sym.symbol)));*/
+
+  v_found_value = caml_copy_nativeint(SYMBOL_VALUE_ADDRESS(sym.symbol));
+  v_dwarf_type = caml_copy_string(
+    TYPE_NAME(SYMBOL_TYPE(sym.symbol)));
+
+  v_option = caml_alloc_small(2, 0 /* Found */);
+  Field(v_option, 0) = v_found_value;
+  Field(v_option, 1) = v_dwarf_type;
+
+  CAMLreturn(v_option);
+}

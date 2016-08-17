@@ -144,6 +144,10 @@ module type S = sig
     | Found of Obj.t * string
   val find_named_value : name:string -> find_named_value_result
 
+  (** Attempt to resolve a name to a global symbol (e.g. one corresponding
+      to an Flambda-lifted allocated constant). *)
+  val find_global_symbol : name:string -> find_named_value_result
+
   type stream
 
   (** A formatter that prints to the debugger terminal for user feedback. *)

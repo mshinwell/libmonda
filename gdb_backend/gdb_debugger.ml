@@ -139,6 +139,11 @@ module Gdb_indirect = struct
      : name:string
     -> find_named_value_result
     = "monda_find_named_value"
+
+  external find_global_symbol
+     : name:string
+    -> find_named_value_result
+    = "monda_find_global_symbol"
 end
 
 let copy_int32 (buf : string) =
@@ -291,6 +296,9 @@ let compilation_directories_for_source_file =
 
 let find_named_value =
   Gdb_indirect.find_named_value
+
+let find_global_symbol =
+  Gdb_indirect.find_global_symbol
 
 type stream = Gdb.Ui_file.t
 

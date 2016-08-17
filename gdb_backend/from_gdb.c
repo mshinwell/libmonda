@@ -79,7 +79,8 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   }
 
   v_value = caml_copy_nativeint(*(intnat*) valaddr);
-/*
+
+  /*
 fprintf(stderr, "monda_val_print.  valaddr=%p *valaddr=%p\n",
   (void*) valaddr, *(void**) valaddr);
 */
@@ -137,7 +138,8 @@ monda_evaluate (const char* expr, int length, char** type_name_out)
   CAMLlocal2(v_stream, v_expr);
   value v_result;
   static value* cb = NULL;
-/*
+
+  /*
 printf("monda_evaluate '%s'\n", expr);fflush(stdout);
 */
 
