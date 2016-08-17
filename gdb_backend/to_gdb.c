@@ -264,11 +264,11 @@ monda_find_global_symbol(value v_name)
     default:
       CAMLreturn(Val_unit);
   }
-
+/*
   fprintf(stderr, "%s found to have value %p, type %s\n",
           String_val(v_name),
           SYMBOL_VALUE_ADDRESS(sym.symbol),
-          TYPE_NAME(SYMBOL_TYPE(sym.symbol)));
+          TYPE_NAME(SYMBOL_TYPE(sym.symbol)));*/
 
   v_found_value = caml_copy_nativeint(sym_value);
   v_dwarf_type = caml_copy_string(

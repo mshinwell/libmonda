@@ -254,7 +254,9 @@ module Make (D : Debugger.S) = struct
         match D.find_global_symbol ~name:module_component_path with
         | Not_found -> None
         | Found (starting_point, dwarf_type) ->
+(*
 Format.eprintf "starting_point %a type %s\n%!" D.Obj.print starting_point
   dwarf_type;
+*)
           found ~starting_point ~dwarf_type ~rest_of_path
 end
