@@ -36,6 +36,7 @@ let debug = Monda_debug.debug
 
 module Make (D : Debugger.S) = struct
   module Our_type_oracle = Type_oracle.Make (D)
+  module V = Unified_value_traversal.Make (D)
 
   type t = {
     type_oracle : Our_type_oracle.t;
@@ -63,15 +64,15 @@ module Make (D : Debugger.S) = struct
     }
 
   let rec value_looks_like_list t value =
-    if D.Obj.is_int value && D.Obj.int value = 0 (* nil *) then
+    if V.is_int value && V.int value = 0 (* nil *) then
       true
     else
-      if (not (D.Obj.is_int value))
-         && D.Obj.is_block value
-         && D.Obj.tag_exn value = 0
-         && D.Obj.size_exn value = 2
+      if (not (V.is_int value))
+         && V.is_block value
+         && V.tag_exn value = 0
+         && V.size_exn value = 2
       then
-        value_looks_like_list t (D.Obj.field_exn value 1)
+        value_looks_like_list t (V.field_exn value 1)
       else
         false
 
@@ -114,20 +115,20 @@ module Make (D : Debugger.S) = struct
         (* One common case: a value that is usually boxed but for the moment is
            initialized with [Val_unit].  For example: module fields before
            initializers have been run when using [Closure]. *)
-        if D.Obj.int v = 0 then Format.fprintf formatter "()"
-        else Format.fprintf formatter "0x%nx" (D.Obj.raw v)
+        if V.int v = 0 then Format.fprintf formatter "()"
+        else Format.fprintf formatter "0x%nx" (V.raw v)
       | Obj_boxed_traversable ->
         if state.summary then Format.fprintf formatter "..."
         else
           let printers =
-            Array.init (D.Obj.size_exn v) (fun _ v ->
+            Array.init (V.size_exn v) (fun _ v ->
               print_value t ~state:(descend state) ~type_of_ident:None v)
           in
           generic_printer t ~state ~guess_if_it's_a_list:true ~printers v
       | Obj_boxed_not_traversable ->
-        Format.fprintf formatter "<0x%nx, tag %d>" (D.Obj.raw v)
-          (D.Obj.tag_exn v)
-      | Int -> Format.fprintf formatter "%d" (D.Obj.int v)
+        Format.fprintf formatter "<0x%nx, tag %d>" (V.raw v)
+          (V.tag_exn v)
+      | Int -> Format.fprintf formatter "%d" (V.int v)
       | Char -> print_char t ~state v
       | Abstract path -> Format.fprintf formatter "<%s>" (Path.name path)
       | Array (ty, env) -> print_array t ~state ~ty ~env v
@@ -159,7 +160,7 @@ module Make (D : Debugger.S) = struct
     end
 
   and generic_printer t ~state ?(separator = ",") ?prefix
-        ~guess_if_it's_a_list ~(printers : (D.Obj.t -> unit) array)
+        ~guess_if_it's_a_list ~(printers : (V.t -> unit) array)
         value : unit =
     let formatter = state.formatter in
     if guess_if_it's_a_list
@@ -176,12 +177,12 @@ module Make (D : Debugger.S) = struct
       end
     else begin
       begin match prefix with
-      | None -> Format.fprintf formatter "@[<1>[%d: " (D.Obj.tag_exn value)
+      | None -> Format.fprintf formatter "@[<1>[%d: " (V.tag_exn value)
       (* CR mshinwell: remove dreadful hack *)
       | Some "XXX" -> ()
       | Some p -> Format.fprintf formatter "@[%s " p
       end;
-      let original_size = D.Obj.size_exn value in
+      let original_size = V.size_exn value in
       let max_size =
         if state.summary then 2 else state.max_array_elements_etc_to_print
       in
@@ -191,7 +192,7 @@ module Make (D : Debugger.S) = struct
       in
       for field = 0 to size - 1 do
         if field > 0 then Format.fprintf formatter "%s@;<1 0>" separator;
-        try printers.(field) (D.Obj.field_exn value field)
+        try printers.(field) (V.field_exn value field)
         with D.Read_error ->
           Format.fprintf formatter "<field %d read failed>" field
       done;
@@ -208,25 +209,25 @@ module Make (D : Debugger.S) = struct
 
   and print_int _t ~state v =
     let formatter = state.formatter in
-    Format.fprintf formatter "%d" (D.Obj.int v)
+    Format.fprintf formatter "%d" (V.int v)
 
   and print_char _t ~state v =
     let formatter = state.formatter in
-    let value = D.Obj.int v in
+    let value = V.int v in
     if value >= 0 && value <= 255 then
       Format.fprintf formatter "'%s'" (Char.escaped (Char.chr value))
     else
-      Format.fprintf formatter "%nd" (D.Obj.raw v)
+      Format.fprintf formatter "%nd" (V.raw v)
 
   and print_string _t ~state v =
     let formatter = state.formatter in
-    let s = D.Obj.string v in
+    let s = V.string v in
     let max_len = 30 in
     if String.length s > max_len then
       Format.fprintf formatter "%S (* %d chars follow *)"
         (String.sub s 0 max_len) (String.length s - max_len)
     else
-      Format.fprintf formatter "%S" (D.Obj.string v)
+      Format.fprintf formatter "%S" (V.string v)
 
   and print_tuple t ~state ~tys ~env v =
     let formatter = state.formatter in
@@ -234,7 +235,7 @@ module Make (D : Debugger.S) = struct
       Format.fprintf formatter "(...)"
     else
       let component_types = Array.of_list tys in
-      let size_ok = Array.length component_types = D.Obj.size_exn v in
+      let size_ok = Array.length component_types = V.size_exn v in
       let printers =
         Array.map (fun ty v ->
             let type_of_ident = if size_ok then Some (ty, env) else None in
@@ -248,7 +249,7 @@ module Make (D : Debugger.S) = struct
 
   and print_array t ~state ~ty ~env v =
     let formatter = state.formatter in
-    let size = D.Obj.size_exn v in
+    let size = V.size_exn v in
     if size = 0 then
       Format.fprintf formatter "@[[| |]@]"
     else if state.summary then
@@ -274,15 +275,15 @@ module Make (D : Debugger.S) = struct
       if state.summary then 2 else state.max_array_elements_etc_to_print
     in
     let rec aux v ~element_index =
-      if D.Obj.is_block v then begin
+      if V.is_block v then begin
         if element_index >= max_elements then
           Format.fprintf formatter "@;..."
         else begin
           try
-            let elt = D.Obj.field_exn v 0 in
-            let next = D.Obj.field_exn v 1 in
+            let elt = V.field_exn v 0 in
+            let next = V.field_exn v 1 in
             print_element elt;
-            if D.Obj.is_block next then Format.fprintf formatter ";@;<1 0>";
+            if V.is_block next then Format.fprintf formatter ";@;<1 0>";
             aux next ~element_index:(element_index + 1)
           with D.Read_error ->
             Format.fprintf formatter "<list element read failed>"
@@ -297,15 +298,15 @@ module Make (D : Debugger.S) = struct
     let formatter = state.formatter in
     Format.fprintf formatter "ref ";
     print_value t ~state:(descend state) ~type_of_ident:(Some (ty, env))
-      (D.Obj.field_exn v 0)
+      (V.field_exn v 0)
 
   and print_record t ~state ~path:_ ~params ~args ~fields ~record_repr ~env v =
     let formatter = state.formatter in
     if state.summary then
       Format.fprintf formatter "{...}"
-    else if List.length fields <> D.Obj.size_exn v then
+    else if List.length fields <> V.size_exn v then
       Format.fprintf formatter "{expected %d fields, target has %d}"
-        (List.length fields) (D.Obj.size_exn v)
+        (List.length fields) (V.size_exn v)
     else begin
       let fields = Array.of_list fields in
       let type_for_field ~index =
@@ -337,12 +338,12 @@ module Make (D : Debugger.S) = struct
         Format.pp_print_newline formatter ();
         Format.fprintf formatter "@[<v>  "
       end;
-      let nb_fields = D.Obj.size_exn v in
+      let nb_fields = V.size_exn v in
       Format.fprintf formatter "@[<v 0>{ ";
       for field_nb = 0 to nb_fields - 1 do
         if field_nb > 0 then Format.fprintf formatter "@   ";
         try
-          let v = D.Obj.field_exn v field_nb in
+          let v = V.field_exn v field_nb in
           let (field_name, printer) = fields_helpers.(field_nb) in
           Format.fprintf formatter "@[<2>%s@ =@ " field_name;
           printer v;
@@ -363,12 +364,12 @@ module Make (D : Debugger.S) = struct
         Format.fprintf formatter "<fun>"
       else begin
         let partial, pc =
-          let arity = D.Obj.int (D.Obj.field_exn v 1) in
+          let arity = V.int (V.field_exn v 1) in
           if arity < 2 then
-            None, D.Obj.field_as_addr_exn v 0
+            None, V.field_as_addr_exn v 0
           else
-            let partial_app_pc = D.Obj.field_as_addr_exn v 0 in
-            let pc = D.Obj.field_as_addr_exn v 2 in
+            let partial_app_pc = V.field_as_addr_exn v 0 in
+            let pc = V.field_as_addr_exn v 2 in
             (* Try to determine if the closure corresponds to a
                partially-applied function. *)
             match D.symbol_at_pc partial_app_pc with
@@ -383,19 +384,19 @@ module Make (D : Debugger.S) = struct
                 match begin
                   let v = ref v in
                   for _i = 1 to num_args_so_far do
-                    if D.Obj.size_exn !v <> 5 then raise Exit;
-                    v := D.Obj.field_exn !v 4
+                    if V.size_exn !v <> 5 then raise Exit;
+                    v := V.field_exn !v 4
                   done;
                   !v
                 end with
                 | exception Exit -> None, pc
                 | v ->
                   (* This should be the original function. *)
-                  if D.Obj.int (D.Obj.field_exn v 1) <= 1 then
+                  if V.int (V.field_exn v 1) <= 1 then
                     None, pc  (* The function should have more than 1 arg. *)
                   else
                     Some (total_num_args, num_args_so_far),
-                      D.Obj.field_as_addr_exn v 2
+                      V.field_as_addr_exn v 2
         in
         let partial, partial_args =
           match partial with
@@ -464,18 +465,18 @@ module Make (D : Debugger.S) = struct
                   next_ctor_number + 1)
     in
     let ctor_info =
-      let tag = D.Obj.tag_exn v in
+      let tag = V.tag_exn v in
       try Some (List.assoc tag non_constant_ctors) with Not_found -> None
     in
     begin match ctor_info with
     | None ->
       let printers =
-        Array.init (D.Obj.size_exn v) (fun _index v ->
+        Array.init (V.size_exn v) (fun _index v ->
           print_value t ~state:(descend state) ~type_of_ident:None v)
       in
       generic_printer t ~state ~printers ~guess_if_it's_a_list:false v
     | Some (cident, args) ->
-      if state.summary || List.length args <> D.Obj.size_exn v then begin
+      if state.summary || List.length args <> V.size_exn v then begin
         Format.fprintf formatter "%s%s (...)" kind (Ident.name cident)
       end else begin
         let printers =
@@ -508,18 +509,18 @@ module Make (D : Debugger.S) = struct
 
   and print_float _t ~state v =
     let formatter = state.formatter in
-    try Format.fprintf formatter "%f" (D.Obj.float_field_exn v 0)
+    try Format.fprintf formatter "%f" (V.float_field_exn v 0)
     with D.Read_error -> Format.fprintf formatter "<double read failed>"
 
   and print_float_array _t ~state v =
     let formatter = state.formatter in
-    let size = D.Obj.size_exn v in
+    let size = V.size_exn v in
     if size = 0 then Format.fprintf formatter "@[[| |] (* float array *)@]"
     else if state.summary then Format.fprintf formatter "@[[|...|]@]"
     else begin
       Format.fprintf formatter "@[<1>[| ";
       for i = 0 to size - 1 do
-        Format.fprintf formatter "%f" (D.Obj.float_field_exn v i);
+        Format.fprintf formatter "%f" (V.float_field_exn v i);
         if i < size - 1 then Format.fprintf formatter ";@;<1 0>"
       done;
       Format.fprintf formatter " |] (* float array *)@]"
@@ -527,12 +528,12 @@ module Make (D : Debugger.S) = struct
 
   and print_custom_block _t ~state v =
     let formatter = state.formatter in
-    if D.Obj.size_exn v < 2 then
+    if V.size_exn v < 2 then
       Format.fprintf formatter "<malformed custom block>"
     else
-      let custom_ops = D.Obj.field_exn v 0 in
-      let identifier = D.Obj.c_string_field_exn custom_ops 0 in
-      let data_ptr = D.Obj.field_as_addr_exn v 1 in
+      let custom_ops = V.field_exn v 0 in
+      let identifier = V.c_string_field_exn custom_ops 0 in
+      let data_ptr = V.field_as_addr_exn v 1 in
       match Naming_conventions.examine_custom_block_identifier identifier with
       | Bigarray ->
         Format.fprintf formatter "<Bigarray: data at %a>"
@@ -562,7 +563,7 @@ module Make (D : Debugger.S) = struct
         ~cmt_file_search_path ~formatter =
     if debug then begin
       Format.printf "Value_printer.print %a type %s\n%!"
-        D.Obj.print scrutinee dwarf_type
+        V.print scrutinee dwarf_type
     end;
     let type_of_ident =
       match Cmt_cache.find_cached_type t.cmt_cache ~cached_type:dwarf_type with

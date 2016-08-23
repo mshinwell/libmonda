@@ -44,7 +44,8 @@ module type S = sig
 
   module Obj : sig
     (** OCaml values that have been read from the program being debugged.
-        Analogous to [Obj.t] from the standard library. *)
+        Analogous to [Obj] in the standard library. *)
+
     type t
 
     (** Analogous to [Obj.is_block]---except that [false] is also
@@ -70,7 +71,7 @@ module type S = sig
     val field_as_addr_exn : t -> int -> target_addr
 
     (** The address that would be read by [field_exn] for the given field. *)
-    val address_of_field : t -> int -> target_addr
+    val address_of_field_exn : t -> int -> target_addr
 
     (** Read the NULL-terminated string pointed to by the given field
         from the target's memory. *)
@@ -91,6 +92,35 @@ module type S = sig
     val raw : t -> Nativeint.t
 
     (** Print the raw value as hex. *)
+    val print : Format.formatter -> t -> unit
+  end
+
+  module Synthetic_ptr : sig
+    (** "Synthetic pointers" to non-immediate OCaml "synthetic" values that
+        have been constructed in the debugger's address space from DWARF
+        information. *)
+
+    type t
+
+    val tag : t -> int
+    val size : t -> int
+
+    (** Determine whether the given field of [t] points at a synthetic
+        value. *)
+    val field_is_synthetic_exn : t -> int -> bool
+
+    (** Extract a field as a synthetic value.  Will raise an exception if the
+        given field is non-synthetic. *)
+    val field_as_synthetic_exn : t -> int -> t
+
+    (** Extract a field as a non-synthetic value (either an OCaml immediate or
+        a pointer to a value in the target program's heap).  Will raise an
+        exception if the given field is synthetic. *)
+    val field_as_obj_exn : t -> int -> Obj.t
+
+    val c_string_field_exn : t -> int -> string
+    val float_field_exn : t -> int -> float
+    val string : t -> string
     val print : Format.formatter -> t -> unit
   end
 

@@ -72,6 +72,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   CAMLlocal4(v_type, v_stream, v_value, v_search_path);
   CAMLlocalN(args, 6);
   static value* callback = NULL;
+  value is_synthetic_pointer;
 
   if (callback == NULL) {
     callback = caml_named_value("From_gdb_ocaml.print_value");
@@ -80,10 +81,20 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
 
   v_value = caml_copy_nativeint(*(intnat*) valaddr);
 
-  /*
-fprintf(stderr, "monda_val_print.  valaddr=%p *valaddr=%p\n",
-  (void*) valaddr, *(void**) valaddr);
-*/
+  /* Determine whether the value is actually a construction made up in the
+     debugger's address space by virtue of interpreting DW_OP_implicit_pointer.
+     The second part of this conditional is really just a sanity check.
+  */
+  is_synthetic_pointer =
+    (value_lval_const(val) == lval_computed
+      && value_bits_synthetic_pointer(val, 0, sizeof(CORE_ADDR) * 8));
+
+fprintf(stderr, "monda_val_print.  SP %d v_value=%p  value_lval_const=%d lval_funcs=%p lazy=%d\n",
+  is_synthetic_pointer,
+  (void*) v_value,
+  (int) (value_lval_const(val)),
+  value_lval_const(val) == lval_computed ? value_computed_funcs(val) : NULL,
+  value_lazy(val));
 
   if (TYPE_NAME(type) == NULL) {
     goto print_as_c;

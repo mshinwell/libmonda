@@ -203,13 +203,13 @@ module Target_memory = struct
     Format.fprintf ppf "0x%nx" t
 end
 
+let wo_tag w  = Nativeint.(to_int (logand w 0xffn))
+let wo_size w = Nativeint.(to_int (shift_right_logical w 10))
+
 module Obj = struct
   let size_addr_minus_one = Nativeint.(of_int (Arch.size_addr - 1))
 
   type t = obj
-
-  let wo_tag w  = Nativeint.(to_int (logand w 0xffn))
-  let wo_size w = Nativeint.(to_int (shift_right_logical w 10))
 
   let is_int x = Nativeint.(logand x one = one)
   let is_unaligned x = Nativeint.(logand x size_addr_minus_one <> zero)
@@ -264,6 +264,53 @@ module Obj = struct
 
   let print ppf t =
     Format.fprintf ppf "0x%nx" t
+end
+
+module Synthetic_ptr = struct
+  type t = int  (* Ahem.  Naked pointer to [struct value*] in the GDB code. *)
+
+  external value_bits_synthetic_pointer
+     : t
+    -> offset_in_bits:(int [@untagged])
+    -> length_in_bits:(int [@untagged])
+    -> (int [@untagged])
+    = "value_bits_synthetic_pointer" "noalloc"
+
+  let field_is_synthetic_exn t index =
+    assert (index >= (-1));
+    value_bits_synthetic_pointer t
+      ~offset_in_bits:(Sys.word_size * index)
+      ~length_in_bits:Sys.word_size
+
+  let field_as_synthetic_exn t index =
+    if not (field_is_synthetic_exn t index) then
+      failwith "field_as_synthetic_exn"
+    else
+      ...
+
+  let field_as_obj_exn t index =
+    if field_is_synthetic_exn t index then
+      failwith "field_as_obj_exn"
+    else
+      ...
+
+  let tag t =
+    wo_tag (field_as_obj_exn t (-1))
+
+  let size t =
+    wo_size (field_as_obj_exn t (-1))
+
+  let c_string_field_exn t index =
+    ...
+
+  let c_float_field_exn t index =
+    ...
+
+  let string t =
+    ...
+
+  let print ppf _t =
+    Format.fprintf ppf "<synthetic pointer>"
 end
 
 let symbol_at_pc pc =
