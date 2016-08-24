@@ -93,6 +93,6 @@ module Make (D : Debugger.S) : sig
      : t
     -> formatter:Format.formatter
     -> type_expr_and_env:(Types.type_expr * Env.t) option
-    -> scrutinee:D.Obj.t
+    -> scrutinee:D.Value.t
     -> Result.t
 end

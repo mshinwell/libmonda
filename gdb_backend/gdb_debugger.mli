@@ -27,9 +27,9 @@
 (*                                                                         *)
 (***************************************************************************)
 
-(** Implementation of [Debugger.S] for gdb.
+(** Implementation of [Debugger.S_base] for gdb.
     This doesn't contain the callbacks invoked from gdb itself.  The
     OCaml implementations of those are in from_gdb_ocaml.ml and the
     C implementations in from_gdb.c. *)
 
-include Debugger.S
+include Debugger.S_base

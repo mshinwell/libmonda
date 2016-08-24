@@ -30,6 +30,8 @@
 type obj = nativeint
 type target_addr = nativeint
 
+let zero_target_addr = 0n
+
 external caml_copy_int32 : Obj.t -> Int32.t = "caml_copy_int32"
 external caml_copy_int64 : Obj.t -> Int64.t = "caml_copy_int64"
 external caml_copy_nativeint : Obj.t -> Nativeint.t = "caml_copy_nativeint"
@@ -211,6 +213,8 @@ module Obj = struct
 
   type t = obj
 
+  let unit = Nativeint.one
+
   let is_int x = Nativeint.(logand x one = one)
   let is_unaligned x = Nativeint.(logand x size_addr_minus_one <> zero)
   let is_block x = not (is_int x || is_unaligned x)
@@ -267,47 +271,68 @@ module Obj = struct
 end
 
 module Synthetic_ptr = struct
-  type t = int  (* Ahem.  Naked pointer to [struct value*] in the GDB code. *)
+  (* Values of type [t] are naked pointers to [struct value *] in GDB.
+     These values are one word wide and contain a pointer to an OCaml
+     value constructed in the debugger's address space. *)
+
+  type t = int
 
   external value_bits_synthetic_pointer
      : t
     -> offset_in_bits:(int [@untagged])
     -> length_in_bits:(int [@untagged])
     -> (int [@untagged])
-    = "value_bits_synthetic_pointer" "noalloc"
+    = "_native_only" "value_bits_synthetic_pointer" [@@noalloc]
 
-  let field_is_synthetic_exn t index =
+  external value_as_long
+     : t
+    -> (nativeint [@unboxed])
+    = "_native_only" "value_as_long" [@@noalloc]
+
+  external value_ptradd
+     : t
+    -> offset:(int [@untagged])  (* behaves like C pointer addition *)
+    -> t
+    = "_native_only" "value_ptradd" [@@noalloc]
+
+  external value_ind : t -> t = "_native_only" "value_ind" [@@noalloc]
+
+  let field t ~index =
     assert (index >= (-1));
-    value_bits_synthetic_pointer t
-      ~offset_in_bits:(Sys.word_size * index)
-      ~length_in_bits:Sys.word_size
+    value_ind (value_ptradd t ~offset:index)
 
-  let field_as_synthetic_exn t index =
-    if not (field_is_synthetic_exn t index) then
-      failwith "field_as_synthetic_exn"
+  let header t = value_as_long (field t ~index:(-1))
+
+  let tag t = wo_tag (header t)
+  let size t = wo_size (header t)
+
+  type read_result = Ok of t | Non_synthetic of Obj.t | Unavailable
+
+  let field_exn t index =
+    assert (index >= 0);
+    let t = field t ~index in
+    let is_synthetic =
+      (value_bits_synthetic_pointer t
+        ~offset_in_bits:0
+        ~length_in_bits:Sys.word_size) <> 0
+    in
+    if is_synthetic then Ok t
     else
-      ...
+      let obj = value_as_long t in
+      (* GDB fills unavailable portions of values with zeroes.  We assume that
+         an OCaml value will never contain genuine NULL pointers. *)
+      if obj = 0n then Unavailable
+      else Non_synthetic (obj : Obj.t)
 
-  let field_as_obj_exn t index =
-    if field_is_synthetic_exn t index then
-      failwith "field_as_obj_exn"
-    else
-      ...
+  (* CR mshinwell: fill these in *)
+  let c_string_field_exn _t _index =
+    "<unsupported>"
 
-  let tag t =
-    wo_tag (field_as_obj_exn t (-1))
+  let float_field_exn _t _index =
+    0.0
 
-  let size t =
-    wo_size (field_as_obj_exn t (-1))
-
-  let c_string_field_exn t index =
-    ...
-
-  let c_float_field_exn t index =
-    ...
-
-  let string t =
-    ...
+  let string _t =
+    "<unsupported>"
 
   let print ppf _t =
     Format.fprintf ppf "<synthetic pointer>"

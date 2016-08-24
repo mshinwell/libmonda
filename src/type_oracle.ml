@@ -100,7 +100,9 @@ module Result = struct
 end
 
 module Make (D : Debugger.S) = struct
-  type maybe_boxed = Unboxed of D.Obj.t | Boxed of D.Obj.t
+  module V = D.Value
+
+  type maybe_boxed = Unboxed of V.t | Boxed of V.t
 
   type t = {
     abstraction_breaker : Abstraction_breaker.t;
@@ -193,16 +195,18 @@ module Make (D : Debugger.S) = struct
           let labels = List.map row_desc.Types.row_fields ~f:fst in
           List.map labels ~f:(fun label -> label, Btype.hash_variant label)
         in
-        let desired_hash = D.Obj.int scrutinee in
-        let matches =
-          List.filter ctor_names_and_hashes
-            ~f:(fun (_ctor_name, hash) -> hash = desired_hash)
-        in
-        begin match matches with
-        | [(ctor_name, _hash)] ->
-          Constant_constructor (ctor_name, Vk.Polymorphic)
-        | _::_ | [] -> Obj_unboxed  (* cannot find ctor with given hash *)
-        end
+        match V.int scrutinee with
+        | None -> Obj_unboxed  (* CR mshinwell: error? *)
+        | Some desired_hash ->
+          let matches =
+            List.filter ctor_names_and_hashes
+              ~f:(fun (_ctor_name, hash) -> hash = desired_hash)
+          in
+          begin match matches with
+          | [(ctor_name, _hash)] ->
+            Constant_constructor (ctor_name, Vk.Polymorphic)
+          | _::_ | [] -> Obj_unboxed  (* cannot find ctor with given hash *)
+          end
       end
     | Types.Ttuple component_types ->
       begin match scrutinee with
@@ -262,19 +266,21 @@ module Make (D : Debugger.S) = struct
             Non_constant_constructor (path, cases, params, args, env, kind)
           | Unboxed scrutinee ->
             let constant_ctors = extract_constant_ctors ~cases in
-            let value = D.Obj.int scrutinee in
-            if value >= 0 && value < List.length constant_ctors then
-              let ident =
-                try Some (List.assoc value constant_ctors)
-                with Not_found -> None
-              in
-              begin match ident with
-              | Some ident ->
-                Constant_constructor (Ident.name ident, Vk.Non_polymorphic)
-              | None -> Obj_unboxed
-              end
-            else
-              Obj_unboxed
+            match V.int scrutinee with
+            | None -> Obj_unboxed (* CR mshinwell: as above *)
+            | Some value ->
+              if value >= 0 && value < List.length constant_ctors then
+                let ident =
+                  try Some (List.assoc value constant_ctors)
+                  with Not_found -> None
+                in
+                begin match ident with
+                | Some ident ->
+                  Constant_constructor (Ident.name ident, Vk.Non_polymorphic)
+                | None -> Obj_unboxed
+                end
+              else
+                Obj_unboxed
           end
         | Types.Type_abstract ->
           if List.mem path ~set:paths_visited_so_far then begin
@@ -321,7 +327,7 @@ module Make (D : Debugger.S) = struct
     if debug then begin
       Format.printf "find_type_information starting (scrutinee %a), \
           type info present? %s\n%!"
-        D.Obj.print scrutinee
+        V.print scrutinee
         (match type_expr_and_env with None -> "no" | Some _ -> "yes")
     end;
     let load_path = !Config.load_path in
@@ -329,7 +335,7 @@ module Make (D : Debugger.S) = struct
        that try to load .cmt files (e.g. [Env.find_type]). *)
     Config.load_path := Cmt_cache.get_search_path t.cmt_cache;
     let result : Result.t =
-      if D.Obj.is_int scrutinee then
+      if V.is_int scrutinee then
         match type_expr_and_env with
         | None -> Obj_unboxed
         | Some (type_expr, env) ->
@@ -337,9 +343,9 @@ module Make (D : Debugger.S) = struct
             ~env ~scrutinee:(Unboxed scrutinee)
       else
         (* CR mshinwell: this is an example of a place we may get a
-           Read_error.  Perhaps D.Obj.tag_exn and so on should return options.
+           Read_error.  Perhaps V.tag_exn and so on should return options.
         *)
-        let tag = D.Obj.tag_exn scrutinee in
+        let tag = V.tag_exn scrutinee in
         match tag with
         | tag when tag < Obj.lazy_tag ->
           begin match type_expr_and_env with

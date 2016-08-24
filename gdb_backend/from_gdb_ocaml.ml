@@ -29,8 +29,10 @@
 
 let cmt_cache = Cmt_cache.create ()
 
-module Follow_path = Follow_path.Make (Gdb_debugger)
-module Our_value_printer = Value_printer.Make (Gdb_debugger)
+module Gdb_debugger_with_traversal = Unified_value_traversal.Make (Gdb_debugger)
+
+module Follow_path = Follow_path.Make (Gdb_debugger_with_traversal)
+module Our_value_printer = Value_printer.Make (Gdb_debugger_with_traversal)
 
 let follow_path = Follow_path.create ~cmt_cache
 let value_printer = Our_value_printer.create ~cmt_cache
@@ -38,7 +40,10 @@ let value_printer = Our_value_printer.create ~cmt_cache
 let split_search_path path =
   String.split_on_char ':' path
 
-let print_value addr (stream : Gdb_debugger.stream) dwarf_type summary
+let print_value is_synthetic
+      (address_on_target : Gdb_debugger_with_traversal.Obj.t)
+      (struct_value : Gdb_debugger_with_traversal.Synthetic_ptr.t)
+      (stream : Gdb_debugger.stream) dwarf_type summary
       max_depth cmt_file_search_path =
   (* When doing e.g. "inf reg", gdb passes "int64_t" as the type to print
      at.  Since we can't yet print out-of-heap values etc, don't try to
@@ -52,8 +57,13 @@ let print_value addr (stream : Gdb_debugger.stream) dwarf_type summary
     false
   end else begin
     let cmt_file_search_path = split_search_path cmt_file_search_path in
+    let scrutinee =
+      let module V = Gdb_debugger_with_traversal.Value in
+      if is_synthetic then V.create_synthetic_ptr struct_value
+      else V.create_exists_on_target address_on_target
+    in
     Our_value_printer.print value_printer
-      ~scrutinee:addr
+      ~scrutinee
       ~formatter:(Gdb_debugger.formatter stream)
       ~dwarf_type
       ~summary
@@ -64,7 +74,7 @@ let print_value addr (stream : Gdb_debugger.stream) dwarf_type summary
 
 type evaluate_result =
   | Failure
-  | Ok of { rvalue : Gdb_debugger.Obj.t; type_name : string; }
+  | Ok of { rvalue : Gdb_debugger_with_traversal.Obj.t; type_name : string; }
 
 let evaluate (path : string) (cmt_file_search_path : string)
       (stream : Gdb_debugger.stream) : evaluate_result =

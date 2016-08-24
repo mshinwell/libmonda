@@ -38,7 +38,7 @@ module Make (D : Debugger.S) : sig
 
   val print
      : t
-    -> scrutinee:D.Obj.t
+    -> scrutinee:D.Value.t
     -> dwarf_type:string
     -> summary:bool
     -> max_depth:int

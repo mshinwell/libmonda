@@ -134,8 +134,9 @@ module Make (D : Debugger.S) = struct
             ~(address_of_v : D.target_addr option) (v : D.Obj.t)
             : obj_or_addr option =
         let oracle_result =
+          let scrutinee = D.Value.create_exists_on_target v in
           Our_type_oracle.find_type_information t.type_oracle ~formatter
-            ~type_expr_and_env:(Some (type_expr, env)) ~scrutinee:v
+            ~type_expr_and_env:(Some (type_expr, env)) ~scrutinee
         in
         match path with
         | Identity ->

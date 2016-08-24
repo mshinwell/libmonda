@@ -34,7 +34,7 @@
     thread safe.
 *)
 
-module type S = sig
+module type S_base = sig
   (** Raised when any of the [Obj] or [Target_memory] functions fail to read
       memory. *)
   exception Read_error
@@ -42,11 +42,16 @@ module type S = sig
   (** An address on the target. *)
   type target_addr
 
+  val zero_target_addr : target_addr
+
   module Obj : sig
     (** OCaml values that have been read from the program being debugged.
         Analogous to [Obj] in the standard library. *)
 
     type t
+
+    (** The unit value. *)
+    val unit : t
 
     (** Analogous to [Obj.is_block]---except that [false] is also
         returned if the input is misaligned. *)
@@ -71,7 +76,7 @@ module type S = sig
     val field_as_addr_exn : t -> int -> target_addr
 
     (** The address that would be read by [field_exn] for the given field. *)
-    val address_of_field_exn : t -> int -> target_addr
+    val address_of_field : t -> int -> target_addr
 
     (** Read the NULL-terminated string pointed to by the given field
         from the target's memory. *)
@@ -96,27 +101,19 @@ module type S = sig
   end
 
   module Synthetic_ptr : sig
-    (** "Synthetic pointers" to non-immediate OCaml "synthetic" values that
-        have been constructed in the debugger's address space from DWARF
-        information. *)
+    (** Pointers to OCaml "synthetic values" that have been constructed in the
+        debugger's address space from DWARF information. *)
 
     type t
 
     val tag : t -> int
     val size : t -> int
 
-    (** Determine whether the given field of [t] points at a synthetic
-        value. *)
-    val field_is_synthetic_exn : t -> int -> bool
-
-    (** Extract a field as a synthetic value.  Will raise an exception if the
-        given field is non-synthetic. *)
-    val field_as_synthetic_exn : t -> int -> t
-
-    (** Extract a field as a non-synthetic value (either an OCaml immediate or
-        a pointer to a value in the target program's heap).  Will raise an
-        exception if the given field is synthetic. *)
-    val field_as_obj_exn : t -> int -> Obj.t
+    (** Read a field of a synthetic value.  This may yield another synthetic
+        pointer; a normal (Obj.t) pointer that actually exists on the target;
+        or that the relevant field is unavailable. *)
+    type read_result = Ok of t | Non_synthetic of Obj.t | Unavailable
+    val field_exn : t -> int -> read_result
 
     val c_string_field_exn : t -> int -> string
     val float_field_exn : t -> int -> float
@@ -182,4 +179,77 @@ module type S = sig
 
   (** A formatter that prints to the debugger terminal for user feedback. *)
   val formatter : stream -> Format.formatter
+end
+
+module type S = sig
+  include S_base
+
+  (** This module provides functions that navigate around OCaml values. The
+      upper levels of such a value may include synthetic parts that are
+      constructed in the debugger's address space by virtue of
+      DW_OP_implicit_pointer. Once we get into a non-synthetic part, i.e. values
+      that actually exist in the target program's memory, we never return to the
+      synthetic world. The value printer doesn't need to have any knowledge of
+      which world is being traversed at any particular time. *)
+  module Value : sig
+    type t
+
+    (** Create a value given an address in the target program's memory. *)
+    val create_exists_on_target : Obj.t -> t
+
+    (** Create a value given a GDB [struct value*] representing a synthetic
+        pointer.  (No checks are made on the value.) *)
+    val create_synthetic_ptr : Synthetic_ptr.t -> t
+
+    (** Analogous to [Obj.is_block]---except that [false] is also
+        returned if the input is misaligned. *)
+    val is_block : t -> bool
+
+    (** Analogous to [Obj.is_int]. *)
+    val is_int : t -> bool
+
+    (** Analogous to [Obj.tag].  Reads from the target's memory.
+        Returns [Obj.unaligned_tag] if the input is misaligned.
+        Returns [Obj.int_tag] if the input satisfies [is_int]. *)
+    val tag_exn : t -> int
+
+    (** Analogous to [Obj.size].  Reads from the target's memory. *)
+    val size_exn : t -> int
+
+    (** Analogous to [Obj.field].  Reads from the target's memory. *)
+    val field_exn : t -> int -> t
+
+    (** Like [field_exn], but for use when the value contains naked
+        pointers (e.g. code pointers in closures). *)
+    val field_as_addr_exn : t -> int -> target_addr
+
+    (** The address that would be read by [field_exn] for the given field.
+        Will return [None] if the supplied [t] references a synthetic
+        value in the debugger's address space, rather than on the target. *)
+    val address_of_field_exn : t -> int -> target_addr option
+
+    (** Read the NULL-terminated string pointed to by the given field
+        from the target's memory. *)
+    val c_string_field_exn : t -> int -> string
+
+    (** Read the unboxed float value in the given field from the target's
+        memory. *)
+    val float_field_exn : t -> int -> float
+
+    (** Assuming that [t] is an integer, return which integer it is.
+        Returns [None] if [t] is a pointer to something in the debugger's
+        address space. *)
+    val int : t -> int option
+
+    (** Assuming that [t] has the layout of a value with tag [String_tag],
+        return which string it holds. *)
+    val string : t -> string
+
+    (** Return the raw value.  Returns [None] if [t] is a pointer to something
+        in the debugger's address space. *)
+    val raw : t -> Nativeint.t option
+
+    (** Print the raw value as hex. *)
+    val print : Format.formatter -> t -> unit
+  end
 end

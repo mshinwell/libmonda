@@ -70,7 +70,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
 {
   CAMLparam0();
   CAMLlocal4(v_type, v_stream, v_value, v_search_path);
-  CAMLlocalN(args, 6);
+  CAMLlocalN(args, 8);
   static value* callback = NULL;
   value is_synthetic_pointer;
 
@@ -104,12 +104,14 @@ fprintf(stderr, "monda_val_print.  SP %d v_value=%p  value_lval_const=%d lval_fu
   v_stream = caml_copy_int64((uint64_t) stream);
   v_search_path = caml_copy_string(search_path ? search_path : "");
 
-  Store_field(args, 0, v_value);
-  Store_field(args, 1, v_stream);
-  Store_field(args, 2, v_type);
-  Store_field(args, 3, Val_bool(options->summary));
-  Store_field(args, 4, Val_long(value_printer_max_depth));
-  Store_field(args, 5, v_search_path);
+  Store_field(args, 0, Val_bool(is_synthetic_pointer));
+  Store_field(args, 1, v_value);
+  Store_field(args, 2, (value) val);
+  Store_field(args, 3, v_stream);
+  Store_field(args, 4, v_type);
+  Store_field(args, 5, Val_bool(options->summary));
+  Store_field(args, 6, Val_long(value_printer_max_depth));
+  Store_field(args, 7, v_search_path);
 
   if (caml_callbackN(*callback, 6, args) == Val_false) {
 print_as_c:

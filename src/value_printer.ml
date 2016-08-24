@@ -36,7 +36,7 @@ let debug = Monda_debug.debug
 
 module Make (D : Debugger.S) = struct
   module Our_type_oracle = Type_oracle.Make (D)
-  module V = Unified_value_traversal.Make (D)
+  module V = D.Value
 
   type t = {
     type_oracle : Our_type_oracle.t;
@@ -64,7 +64,7 @@ module Make (D : Debugger.S) = struct
     }
 
   let rec value_looks_like_list t value =
-    if V.is_int value && V.int value = 0 (* nil *) then
+    if V.is_int value && V.int value = Some 0 (* nil *) then
       true
     else
       if (not (V.is_int value))
@@ -115,8 +115,12 @@ module Make (D : Debugger.S) = struct
         (* One common case: a value that is usually boxed but for the moment is
            initialized with [Val_unit].  For example: module fields before
            initializers have been run when using [Closure]. *)
-        if V.int v = 0 then Format.fprintf formatter "()"
-        else Format.fprintf formatter "0x%nx" (V.raw v)
+        if V.int v = Some 0 then Format.fprintf formatter "()"
+        else
+          begin match V.raw v with
+          | Some v -> Format.fprintf formatter "0x%nx" v
+          | None -> Format.fprintf formatter "<synthetic pointer>"
+          end
       | Obj_boxed_traversable ->
         if state.summary then Format.fprintf formatter "..."
         else
@@ -126,9 +130,16 @@ module Make (D : Debugger.S) = struct
           in
           generic_printer t ~state ~guess_if_it's_a_list:true ~printers v
       | Obj_boxed_not_traversable ->
-        Format.fprintf formatter "<0x%nx, tag %d>" (V.raw v)
-          (V.tag_exn v)
-      | Int -> Format.fprintf formatter "%d" (V.int v)
+        begin match V.raw v with
+        | Some raw ->
+          Format.fprintf formatter "<0x%nx, tag %d>" raw (V.tag_exn v)
+        | None -> Format.fprintf formatter "<synthetic pointer>"
+        end
+      | Int ->
+        begin match V.int v with
+        | Some i -> Format.fprintf formatter "%d" i
+        | None -> Format.fprintf formatter "<Int?>"
+        end
       | Char -> print_char t ~state v
       | Abstract path -> Format.fprintf formatter "<%s>" (Path.name path)
       | Array (ty, env) -> print_array t ~state ~ty ~env v
@@ -209,15 +220,21 @@ module Make (D : Debugger.S) = struct
 
   and print_int _t ~state v =
     let formatter = state.formatter in
-    Format.fprintf formatter "%d" (V.int v)
+    match V.int v with
+    | None -> Format.fprintf formatter "<synthetic pointer>"
+    | Some v -> Format.fprintf formatter "%d" v
 
   and print_char _t ~state v =
     let formatter = state.formatter in
-    let value = V.int v in
-    if value >= 0 && value <= 255 then
-      Format.fprintf formatter "'%s'" (Char.escaped (Char.chr value))
-    else
-      Format.fprintf formatter "%nd" (V.raw v)
+    match V.int v with
+    | None -> Format.fprintf formatter "<synthetic pointer>"
+    | Some value ->
+      if value >= 0 && value <= 255 then
+        Format.fprintf formatter "'%s'" (Char.escaped (Char.chr value))
+      else
+        match V.raw v with
+        | Some v -> Format.fprintf formatter "%nd" v
+        | None -> Format.fprintf formatter "<synthetic pointer>"
 
   and print_string _t ~state v =
     let formatter = state.formatter in
@@ -364,39 +381,44 @@ module Make (D : Debugger.S) = struct
         Format.fprintf formatter "<fun>"
       else begin
         let partial, pc =
-          let arity = V.int (V.field_exn v 1) in
-          if arity < 2 then
-            None, V.field_as_addr_exn v 0
-          else
-            let partial_app_pc = V.field_as_addr_exn v 0 in
-            let pc = V.field_as_addr_exn v 2 in
-            (* Try to determine if the closure corresponds to a
-               partially-applied function. *)
-            match D.symbol_at_pc partial_app_pc with
-            | None -> None, pc
-            | Some symbol ->
-              match Naming_conventions.is_currying_wrapper symbol with
+          match V.int (V.field_exn v 1) with
+          | None -> None, V.field_as_addr_exn v 0
+          | Some arity ->
+            if arity < 2 then
+              None, V.field_as_addr_exn v 0
+            else
+              let partial_app_pc = V.field_as_addr_exn v 0 in
+              let pc = V.field_as_addr_exn v 2 in
+              (* Try to determine if the closure corresponds to a
+                partially-applied function. *)
+              match D.symbol_at_pc partial_app_pc with
               | None -> None, pc
-              | Some (total_num_args, num_args_so_far) ->
-                (* Find the original closure in order to determine which
-                   function is partially applied.  (See comments about currying
-                   functions in cmmgen.ml in the compiler source.) *)
-                match begin
-                  let v = ref v in
-                  for _i = 1 to num_args_so_far do
-                    if V.size_exn !v <> 5 then raise Exit;
-                    v := V.field_exn !v 4
-                  done;
-                  !v
-                end with
-                | exception Exit -> None, pc
-                | v ->
-                  (* This should be the original function. *)
-                  if V.int (V.field_exn v 1) <= 1 then
-                    None, pc  (* The function should have more than 1 arg. *)
-                  else
-                    Some (total_num_args, num_args_so_far),
-                      V.field_as_addr_exn v 2
+              | Some symbol ->
+                match Naming_conventions.is_currying_wrapper symbol with
+                | None -> None, pc
+                | Some (total_num_args, num_args_so_far) ->
+                  (* Find the original closure in order to determine which
+                    function is partially applied.  (See comments about currying
+                    functions in cmmgen.ml in the compiler source.) *)
+                  match begin
+                    let v = ref v in
+                    for _i = 1 to num_args_so_far do
+                      if V.size_exn !v <> 5 then raise Exit;
+                      v := V.field_exn !v 4
+                    done;
+                    !v
+                  end with
+                  | exception Exit -> None, pc
+                  | v ->
+                    (* This should be the original function. *)
+                    match V.int (V.field_exn v 1) with
+                    | None -> None, pc
+                    | Some arity when arity <= 1 ->
+                      (* The function should have more than 1 arg. *)
+                      None, pc
+                    | Some _arity ->
+                      Some (total_num_args, num_args_so_far),
+                        V.field_as_addr_exn v 2
         in
         let partial, partial_args =
           match partial with
