@@ -271,31 +271,34 @@ module Obj = struct
 end
 
 module Synthetic_ptr = struct
-  (* Values of type [t] are naked pointers to [struct value *] in GDB.
+  (* Values of type [t] are pointers to [struct value *] in GDB.
      These values are one word wide and contain a pointer to an OCaml
      value constructed in the debugger's address space. *)
 
-  type t = int
+  type t = nativeint
 
   external value_bits_synthetic_pointer
-     : t
+     : (t [@unboxed])
     -> offset_in_bits:(int [@untagged])
     -> length_in_bits:(int [@untagged])
     -> (int [@untagged])
     = "_native_only" "value_bits_synthetic_pointer" [@@noalloc]
 
   external value_as_long
-     : t
+     : (t [@unboxed])
     -> (nativeint [@unboxed])
     = "_native_only" "value_as_long" [@@noalloc]
 
   external value_ptradd
-     : t
+     : (t [@unboxed])
     -> offset:(int [@untagged])  (* behaves like C pointer addition *)
-    -> t
+    -> (t [@unboxed])
     = "_native_only" "value_ptradd" [@@noalloc]
 
-  external value_ind : t -> t = "_native_only" "value_ind" [@@noalloc]
+  external value_ind
+     : (t [@unboxed])
+    -> (t [@unboxed])
+    = "_native_only" "value_ind" [@@noalloc]
 
   let field t ~index =
     assert (index >= (-1));
