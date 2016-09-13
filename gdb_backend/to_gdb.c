@@ -242,7 +242,7 @@ monda_find_global_symbol(value v_name)
       break;
 
     case LOC_COMPUTED: { /* Initialize_symbol / inconstant case */
-      value* v;
+      struct value* v;
 
       if (SYMBOL_COMPUTED_OPS(sym.symbol)->read_needs_frame(sym.symbol)
             || SYMBOL_COMPUTED_OPS(sym.symbol)->location_has_loclist) {
@@ -279,4 +279,15 @@ monda_find_global_symbol(value v_name)
   Field(v_option, 1) = v_dwarf_type;
 
   CAMLreturn(v_option);
+}
+
+CAMLprim value
+monda_value_struct_elt(struct value* v, value field_name)
+{
+  struct value* found;
+
+  found = value_struct_elt(&v, NULL, String_val(field_name), NULL,
+    "libmonda error: field not found (monda_value_struct_elt)");
+
+  return (value) found;
 }

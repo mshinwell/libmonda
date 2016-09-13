@@ -169,6 +169,7 @@ module Target_memory = struct
     then invalid_arg "read_exn: len > String.length buf"
     else begin
       let size = Nativeint.of_int len in
+Printf.printf "About to read target memory at 0x%nx (size %nd)\n%!" addr size;
       let result = Gdb.target_read_memory ~addr ~buf ~size in
       if result <> 0 then begin
         raise Read_error
@@ -284,48 +285,60 @@ module Synthetic_ptr = struct
     -> (int [@untagged])
     = "_native_only" "value_bits_synthetic_pointer" [@@noalloc]
 
+  let is_synthetic t =
+    (value_bits_synthetic_pointer t
+      ~offset_in_bits:0
+      ~length_in_bits:Sys.word_size) <> 0
+
   external value_as_long
      : (t [@unboxed])
     -> (nativeint [@unboxed])
     = "_native_only" "value_as_long" [@@noalloc]
 
-  external value_ptradd
+  (* N.B. [monda_value_struct_elt] does [value_ind] (which can handle implicit
+     pointers) before looking up the field name in the resulting struct. *)
+  external monda_value_struct_elt
      : (t [@unboxed])
-    -> offset:(int [@untagged])  (* behaves like C pointer addition *)
+    -> field_name:string
     -> (t [@unboxed])
-    = "_native_only" "value_ptradd" [@@noalloc]
+    = "_native_only" "monda_value_struct_elt" [@@noalloc]
 
-  external value_ind
+  external value_contents
      : (t [@unboxed])
-    -> (t [@unboxed])
-    = "_native_only" "value_ind" [@@noalloc]
-
-  let field t ~index =
-    assert (index >= (-1));
-    value_ind (value_ptradd t ~offset:index)
-
-  let header t = value_as_long (field t ~index:(-1))
-
-  let tag t = wo_tag (header t)
-  let size t = wo_size (header t)
+    -> string
+    = "_native_only" "value_contents" [@@noalloc]
 
   type read_result = Ok of t | Non_synthetic of Obj.t | Unavailable
 
   let field_exn t index =
-    assert (index >= 0);
-    let t = field t ~index in
-    let is_synthetic =
-      (value_bits_synthetic_pointer t
-        ~offset_in_bits:0
-        ~length_in_bits:Sys.word_size) <> 0
-    in
-    if is_synthetic then Ok t
-    else
-      let obj = value_as_long t in
-      (* GDB fills unavailable portions of values with zeroes.  We assume that
-         an OCaml value will never contain genuine NULL pointers. *)
-      if obj = 0n then Unavailable
-      else Non_synthetic (obj : Obj.t)
+    assert (index >= (-1));
+    assert (is_synthetic t);
+Printf.printf ">> field_exn %d on synthetic pointer\n%!" index;
+    let field_name = string_of_int index in
+    let t = monda_value_struct_elt t ~field_name in
+    if t = 0n then begin
+      Unavailable
+    end else begin
+  Printf.printf "monda_value_struct_elt ok\n%!";
+      if is_synthetic t then
+        Ok t
+      else
+        let obj = copy_nativeint (value_contents t) in
+  Printf.printf "copy_nativeint gives 0x%nx\n%!" obj;
+        (* GDB fills unavailable portions of values with zeroes.  We assume that
+           an OCaml value will never contain genuine NULL pointers. *)
+        if obj = 0n then Unavailable
+        else Non_synthetic (obj : Obj.t)
+    end
+
+  (* CR mshinwell: improve this; refactor to next level up too *)
+  let header t =
+    match field_exn t (-1) with
+    | Non_synthetic header -> Printf.printf "header %nd\n%!" header;header
+    | Ok _ | Unavailable -> 0n
+
+  let tag t = wo_tag (header t)
+  let size t = wo_size (header t)
 
   (* CR mshinwell: fill these in *)
   let c_string_field_exn _t _index =

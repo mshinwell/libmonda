@@ -90,15 +90,19 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
     (value_lval_const(val) == lval_computed
       && value_bits_synthetic_pointer(val, 0, sizeof(CORE_ADDR) * 8));
 
-fprintf(stderr, "monda_val_print.  SP %d *valaddr=%p v_value=%p  value_lval_const=%d lval_funcs=%p lazy=%d\n",
-  is_synthetic_pointer,
-  (void*) *(intnat*) valaddr,
-  (void*) v_value,
-  (int) (value_lval_const(val)),
-  value_lval_const(val) == lval_computed ? value_computed_funcs(val) : NULL,
-  value_lazy(val));
+  /*
+  fprintf(stderr, "monda_val_print.  SP %d *valaddr=%p v_value=%p  value_lval_const=%d lval_funcs=%p lazy=%d\n",
+    is_synthetic_pointer,
+    (void*) *(intnat*) valaddr,
+    (void*) v_value,
+    (int) (value_lval_const(val)),
+    value_lval_const(val) == lval_computed ? value_computed_funcs(val) : NULL,
+    value_lazy(val));
+    */
 
-  if (TYPE_NAME(type) == NULL) {
+  /* CR mshinwell: improve this test */
+  if ((TYPE_NAME(type) == NULL && !is_synthetic_pointer)
+       || (is_synthetic_pointer && TYPE_CODE(type) != TYPE_CODE_PTR)) {
     fprintf(stderr, "monda_val_print -> print_as_c 1\n");
     goto print_as_c;
   }
@@ -107,7 +111,7 @@ fprintf(stderr, "monda_val_print.  SP %d *valaddr=%p v_value=%p  value_lval_cons
   v_stream = caml_copy_int64((uint64_t) stream);
   v_search_path = caml_copy_string(search_path ? search_path : "");
   v_val = caml_copy_nativeint((intnat) val);
-  
+
   Store_field(args, 0, Val_bool(is_synthetic_pointer));
   Store_field(args, 1, v_value);
   Store_field(args, 2, v_val);
@@ -118,6 +122,7 @@ fprintf(stderr, "monda_val_print.  SP %d *valaddr=%p v_value=%p  value_lval_cons
   Store_field(args, 7, v_search_path);
 
   fprintf(stderr, "monda_val_print -> OCaml printer.  Type '%s'\n", TYPE_NAME(type));
+  fflush(stderr);
   if (caml_callbackN(*callback, 8, args) == Val_false) {
     fprintf(stderr, "monda_val_print -> print_as_c 2\n");
 print_as_c:
