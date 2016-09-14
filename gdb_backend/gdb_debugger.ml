@@ -157,6 +157,9 @@ let copy_int64 (buf : string) =
 let copy_nativeint (buf : string) =
   caml_copy_nativeint (Obj.field (Obj.repr buf) 0)
 
+let copy_nativeint_from_out_of_heap_buffer (buf : out_of_heap_buffer) =
+  caml_copy_nativeint (Obj.field (Obj.repr buf) 0)
+
 let copy_float (buf : string) =
   (* CR-soon mshinwell: see if this can be done with float_of_bits etc *)
   caml_copy_double ((Obj.magic buf) : float)
@@ -307,7 +310,7 @@ module Synthetic_ptr = struct
 
   external value_contents
      : (t [@unboxed])
-    -> string
+    -> out_of_heap_buffer
     = "_native_only" "value_contents" [@@noalloc]
 
   type read_result = Ok of t | Non_synthetic of Obj.t | Unavailable
@@ -325,7 +328,7 @@ module Synthetic_ptr = struct
       if is_synthetic t then
         Ok t
       else
-        let obj = copy_nativeint (value_contents t) in
+        let obj = copy_nativeint_from_out_of_heap_buffer (value_contents t) in
 (*  Printf.printf "copy_nativeint gives 0x%nx\n%!" obj;*)
         (* GDB fills unavailable portions of values with zeroes.  We assume that
            an OCaml value will never contain genuine NULL pointers. *)
