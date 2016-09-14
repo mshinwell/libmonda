@@ -169,7 +169,9 @@ module Target_memory = struct
     then invalid_arg "read_exn: len > String.length buf"
     else begin
       let size = Nativeint.of_int len in
+(*
 Printf.printf "About to read target memory at 0x%nx (size %nd)\n%!" addr size;
+*)
       let result = Gdb.target_read_memory ~addr ~buf ~size in
       if result <> 0 then begin
         raise Read_error
@@ -313,18 +315,18 @@ module Synthetic_ptr = struct
   let field_exn t index =
     assert (index >= (-1));
     assert (is_synthetic t);
-Printf.printf ">> field_exn %d on synthetic pointer\n%!" index;
+(*Printf.printf ">> field_exn %d on synthetic pointer\n%!" index; *)
     let field_name = string_of_int index in
     let t = monda_value_struct_elt t ~field_name in
     if t = 0n then begin
       Unavailable
     end else begin
-  Printf.printf "monda_value_struct_elt ok\n%!";
+(*  Printf.printf "monda_value_struct_elt ok\n%!"; *)
       if is_synthetic t then
         Ok t
       else
         let obj = copy_nativeint (value_contents t) in
-  Printf.printf "copy_nativeint gives 0x%nx\n%!" obj;
+(*  Printf.printf "copy_nativeint gives 0x%nx\n%!" obj;*)
         (* GDB fills unavailable portions of values with zeroes.  We assume that
            an OCaml value will never contain genuine NULL pointers. *)
         if obj = 0n then Unavailable
@@ -334,7 +336,7 @@ Printf.printf ">> field_exn %d on synthetic pointer\n%!" index;
   (* CR mshinwell: improve this; refactor to next level up too *)
   let header t =
     match field_exn t (-1) with
-    | Non_synthetic header -> Printf.printf "header %nd\n%!" header;header
+    | Non_synthetic header -> (*Printf.printf "header %nd\n%!" header;*) header
     | Ok _ | Unavailable -> 0n
 
   let tag t = wo_tag (header t)

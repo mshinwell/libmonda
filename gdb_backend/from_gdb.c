@@ -103,7 +103,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   /* CR mshinwell: improve this test */
   if ((TYPE_NAME(type) == NULL && !is_synthetic_pointer)
        || (is_synthetic_pointer && TYPE_CODE(type) != TYPE_CODE_PTR)) {
-    fprintf(stderr, "monda_val_print -> print_as_c 1\n");
+/*    fprintf(stderr, "monda_val_print -> print_as_c 1\n");*/
     goto print_as_c;
   }
 
@@ -121,10 +121,12 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   Store_field(args, 6, Val_long(value_printer_max_depth));
   Store_field(args, 7, v_search_path);
 
+  /*
   fprintf(stderr, "monda_val_print -> OCaml printer.  Type '%s'\n", TYPE_NAME(type));
   fflush(stderr);
+  */
   if (caml_callbackN(*callback, 8, args) == Val_false) {
-    fprintf(stderr, "monda_val_print -> print_as_c 2\n");
+   /* fprintf(stderr, "monda_val_print -> print_as_c 2\n");*/
 print_as_c:
     c_val_print(type, valaddr, embedded_offset, address, stream, recurse,
       val, options, depth);
@@ -162,8 +164,9 @@ monda_evaluate (const char* expr, int length, char** type_name_out)
   CAMLlocal2(v_stream, v_expr);
   value v_result;
   static value* cb = NULL;
-
+/*
 printf("monda_evaluate '%s'\n", expr);fflush(stdout);
+*/
 
   if (cb == NULL) {
     cb = caml_named_value ("From_gdb_ocaml.evaluate");
@@ -182,12 +185,12 @@ printf("monda_evaluate '%s'\n", expr);fflush(stdout);
   if (v_result == Val_unit /* Failure */) {
     CAMLreturn((CORE_ADDR) 0);  /* CR mshinwell: suboptimal? */
   }
-
+/*
 printf("monda_evaluate is returning %p, type name '%s'\n",
   (void*)Nativeint_val(Field(v_result, 0)),
   String_val(Field(v_result, 1)));
 fflush(stdout);
-
+*/
 
   *type_name_out = xstrdup(String_val(Field(v_result, 1)));
 

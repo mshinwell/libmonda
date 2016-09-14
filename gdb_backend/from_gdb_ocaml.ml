@@ -62,10 +62,12 @@ let print_value is_synthetic
       if is_synthetic then V.create_synthetic_ptr struct_value
       else V.create_exists_on_target address_on_target
     in
+(*
 Format.eprintf "From_gdb_ocaml.print_value OVP starting.  Scrutinee %a.  \
   Synthetic? %b\n%!"
   Gdb_debugger_with_traversal.Value.print scrutinee
   is_synthetic;
+*)
     Our_value_printer.print value_printer
       ~scrutinee
       ~formatter:(Gdb_debugger.formatter stream)
