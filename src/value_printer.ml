@@ -619,26 +619,33 @@ module Make (D : Debugger.S) = struct
       Format.printf "Value_printer.print %a type %s\n%!"
         V.print scrutinee dwarf_type
     end;
-    let type_of_ident =
-      match Cmt_cache.find_cached_type t.cmt_cache ~cached_type:dwarf_type with
-      | Some type_expr_and_env -> Some type_expr_and_env
-      | None ->
-        Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
-          ~cmt_cache:t.cmt_cache ~cmt_file_search_path
-    in
-    if debug then Printf.printf "Value_printer.print entry point\n%!";
-    Format.fprintf formatter "@[";
-    let state = {
-      summary;
-      depth = 0;
-      max_depth;
-      print_sig = true;
-      formatter;
-      (* CR mshinwell: pass this next one as an arg to this function *)
-      max_array_elements_etc_to_print = 10;
-    }
-    in
-    print_value t ~state ~type_of_ident scrutinee;
-    Format.fprintf formatter "@]";
-    Format.pp_print_flush formatter ()
+    (* Example of this null case: [Iphantom_read_var_field] on something
+       unavailable. *)
+    if V.is_null scrutinee then begin
+      Format.fprintf formatter "<optimized out>";
+      Format.pp_print_flush formatter ()
+    end else begin
+      let type_of_ident =
+        match Cmt_cache.find_cached_type t.cmt_cache ~cached_type:dwarf_type with
+        | Some type_expr_and_env -> Some type_expr_and_env
+        | None ->
+          Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
+            ~cmt_cache:t.cmt_cache ~cmt_file_search_path
+      in
+      if debug then Printf.printf "Value_printer.print entry point\n%!";
+      Format.fprintf formatter "@[";
+      let state = {
+        summary;
+        depth = 0;
+        max_depth;
+        print_sig = true;
+        formatter;
+        (* CR mshinwell: pass this next one as an arg to this function *)
+        max_array_elements_etc_to_print = 10;
+      }
+      in
+      print_value t ~state ~type_of_ident scrutinee;
+      Format.fprintf formatter "@]";
+      Format.pp_print_flush formatter ()
+    end
 end

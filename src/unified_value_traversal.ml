@@ -47,6 +47,11 @@ module Make (D : Debugger.S_base) = struct
 
     let is_int t = not (is_block t)
 
+    let is_null t =
+      match t with
+      | Exists_on_target obj -> Obj.is_null obj
+      | Synthetic_ptr _ -> false
+
     let tag_exn t =
       match t with
       | Exists_on_target obj -> Obj.tag_exn obj

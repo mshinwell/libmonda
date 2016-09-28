@@ -60,6 +60,8 @@ module type S_base = sig
     (** Analogous to [Obj.is_int]. *)
     val is_int : t -> bool
 
+    val is_null : t -> bool
+
     (** Analogous to [Obj.tag].  Reads from the target's memory.
         Returns [Obj.unaligned_tag] if the input is misaligned.
         Returns [Obj.int_tag] if the input satisfies [is_int]. *)
@@ -200,6 +202,8 @@ module type S = sig
     (** Create a value given a GDB [struct value*] representing a synthetic
         pointer.  (No checks are made on the value.) *)
     val create_synthetic_ptr : Synthetic_ptr.t -> t
+
+    val is_null : t -> bool
 
     (** Analogous to [Obj.is_block]---except that [false] is also
         returned if the input is misaligned. *)

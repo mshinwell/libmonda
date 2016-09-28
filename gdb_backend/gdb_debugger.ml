@@ -221,6 +221,8 @@ module Obj = struct
 
   let unit = Nativeint.one
 
+  let is_null x = Nativeint.compare x 0n = 0
+
   let is_int x = Nativeint.(logand x one = one)
   let is_unaligned x = Nativeint.(logand x size_addr_minus_one <> zero)
   let is_block x = not (is_int x || is_unaligned x)
