@@ -207,7 +207,7 @@ module Make (D : Debugger.S) = struct
         if field > 0 then Format.fprintf formatter "%s@;<1 0>" separator;
         try
           match V.field_exn value field with
-          | None -> Format.fprintf formatter "<unavailable>"
+          | None -> Format.fprintf formatter "<optimized out>"
           | Some field_value -> printers.(field) field_value
         with D.Read_error ->
           Format.fprintf formatter "<field %d read failed>" field
@@ -326,7 +326,7 @@ module Make (D : Debugger.S) = struct
     let formatter = state.formatter in
     Format.fprintf formatter "ref ";
     match V.field_exn v 0 with
-    | None -> Format.fprintf formatter "<unavailable>"
+    | None -> Format.fprintf formatter "<optimized out>"
     | Some contents ->
       print_value t ~state:(descend state) ~type_of_ident:(Some (ty, env))
         contents
@@ -378,7 +378,7 @@ module Make (D : Debugger.S) = struct
           match V.field_exn v field_nb with
           | None ->
             Format.fprintf formatter "@[<2>%s@ =@ " field_name;
-            Format.fprintf formatter "<unavailable>";
+            Format.fprintf formatter "<optimized out>";
             Format.fprintf formatter ";@]"
           | Some v ->
             Format.fprintf formatter "@[<2>%s@ =@ " field_name;

@@ -172,9 +172,7 @@ module Target_memory = struct
     then invalid_arg "read_exn: len > String.length buf"
     else begin
       let size = Nativeint.of_int len in
-(*
 Printf.printf "About to read target memory at 0x%nx (size %nd)\n%!" addr size;
-*)
       let result = Gdb.target_read_memory ~addr ~buf ~size in
       if result <> 0 then begin
         raise Read_error
