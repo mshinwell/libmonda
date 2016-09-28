@@ -311,7 +311,7 @@ module Synthetic_ptr = struct
   external value_contents
      : (t [@unboxed])
     -> out_of_heap_buffer
-    = "_native_only" "value_contents" [@@noalloc]
+    = "_native_only" "monda_value_contents" [@@noalloc]
 
   type read_result = Ok of t | Non_synthetic of Obj.t | Unavailable
 

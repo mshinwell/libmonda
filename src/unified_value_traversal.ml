@@ -59,13 +59,13 @@ module Make (D : Debugger.S_base) = struct
 
     let field_exn t index =
       match t with
-      | Exists_on_target obj -> Exists_on_target (Obj.field_exn obj index)
+      | Exists_on_target obj ->
+        Some (Exists_on_target (Obj.field_exn obj index))
       | Synthetic_ptr ptr ->
         match Synthetic_ptr.field_exn ptr index with
-        | Ok ptr -> Synthetic_ptr ptr
-        | Non_synthetic obj -> Exists_on_target obj
-        (* CR mshinwell: Maybe this function should return an option. *)
-        | Unavailable -> Exists_on_target Obj.unit
+        | Ok ptr -> Some (Synthetic_ptr ptr)
+        | Non_synthetic obj -> Some (Exists_on_target obj)
+        | Unavailable -> None
 
     let field_as_addr_exn t index =
       match t with

@@ -72,7 +72,9 @@ module Make (D : Debugger.S) = struct
          && V.tag_exn value = 0
          && V.size_exn value = 2
       then
-        value_looks_like_list t (V.field_exn value 1)
+        match V.field_exn value 1 with
+        | None -> false
+        | Some next -> value_looks_like_list t next
       else
         false
 
@@ -203,7 +205,10 @@ module Make (D : Debugger.S) = struct
       in
       for field = 0 to size - 1 do
         if field > 0 then Format.fprintf formatter "%s@;<1 0>" separator;
-        try printers.(field) (V.field_exn value field)
+        try
+          match V.field_exn value field with
+          | None -> Format.fprintf formatter "<unavailable>"
+          | Some field_value -> printers.(field) field_value
         with D.Read_error ->
           Format.fprintf formatter "<field %d read failed>" field
       done;
@@ -297,11 +302,17 @@ module Make (D : Debugger.S) = struct
           Format.fprintf formatter "@;..."
         else begin
           try
-            let elt = V.field_exn v 0 in
-            let next = V.field_exn v 1 in
-            print_element elt;
-            if V.is_block next then Format.fprintf formatter ";@;<1 0>";
-            aux next ~element_index:(element_index + 1)
+            begin match V.field_exn v 0 with
+            | None -> Format.fprintf formatter "<list element unavailable>"
+            | Some elt -> print_element elt
+            end;
+            begin match V.field_exn v 1 with
+            | None ->
+              Format.fprintf formatter ";@ <list next pointer unavailable>"
+            | Some next ->
+              if V.is_block next then Format.fprintf formatter ";@;<1 0>";
+              aux next ~element_index:(element_index + 1)
+            end;
           with D.Read_error ->
             Format.fprintf formatter "<list element read failed>"
         end
@@ -314,8 +325,11 @@ module Make (D : Debugger.S) = struct
   and print_ref t ~state ~ty ~env v =
     let formatter = state.formatter in
     Format.fprintf formatter "ref ";
-    print_value t ~state:(descend state) ~type_of_ident:(Some (ty, env))
-      (V.field_exn v 0)
+    match V.field_exn v 0 with
+    | None -> Format.fprintf formatter "<unavailable>"
+    | Some contents ->
+      print_value t ~state:(descend state) ~type_of_ident:(Some (ty, env))
+        contents
 
   and print_record t ~state ~path:_ ~params ~args ~fields ~record_repr ~env v =
     let formatter = state.formatter in
@@ -360,11 +374,16 @@ module Make (D : Debugger.S) = struct
       for field_nb = 0 to nb_fields - 1 do
         if field_nb > 0 then Format.fprintf formatter "@   ";
         try
-          let v = V.field_exn v field_nb in
           let (field_name, printer) = fields_helpers.(field_nb) in
-          Format.fprintf formatter "@[<2>%s@ =@ " field_name;
-          printer v;
-          Format.fprintf formatter ";@]"
+          match V.field_exn v field_nb with
+          | None ->
+            Format.fprintf formatter "@[<2>%s@ =@ " field_name;
+            Format.fprintf formatter "<unavailable>";
+            Format.fprintf formatter ";@]"
+          | Some v ->
+            Format.fprintf formatter "@[<2>%s@ =@ " field_name;
+            printer v;
+            Format.fprintf formatter ";@]"
         with D.Read_error ->
           Format.fprintf formatter "<could not read field %d>" field_nb
       done;
@@ -380,66 +399,76 @@ module Make (D : Debugger.S) = struct
       if state.summary then
         Format.fprintf formatter "<fun>"
       else begin
-        let partial, pc =
-          match V.int (V.field_exn v 1) with
-          | None -> None, V.field_as_addr_exn v 0
-          | Some arity ->
-            if arity < 2 then
-              None, V.field_as_addr_exn v 0
-            else
-              let partial_app_pc = V.field_as_addr_exn v 0 in
-              let pc = V.field_as_addr_exn v 2 in
-              (* Try to determine if the closure corresponds to a
-                partially-applied function. *)
-              match D.symbol_at_pc partial_app_pc with
-              | None -> None, pc
-              | Some symbol ->
-                match Naming_conventions.is_currying_wrapper symbol with
-                | None -> None, pc
-                | Some (total_num_args, num_args_so_far) ->
-                  (* Find the original closure in order to determine which
-                    function is partially applied.  (See comments about currying
-                    functions in cmmgen.ml in the compiler source.) *)
-                  match begin
-                    let v = ref v in
-                    for _i = 1 to num_args_so_far do
-                      if V.size_exn !v <> 5 then raise Exit;
-                      v := V.field_exn !v 4
-                    done;
-                    !v
-                  end with
-                  | exception Exit -> None, pc
-                  | v ->
-                    (* This should be the original function. *)
-                    match V.int (V.field_exn v 1) with
+        match V.field_exn v 1 with
+        | None -> Format.fprintf formatter "<fun (code pointer unavailable)>"
+        | Some pc ->
+          let pc = V.int pc in
+          let partial, pc =
+              match pc with
+              | None -> None, V.field_as_addr_exn v 0
+              | Some arity ->
+                if arity < 2 then
+                  None, V.field_as_addr_exn v 0
+                else
+                  let partial_app_pc = V.field_as_addr_exn v 0 in
+                  let pc = V.field_as_addr_exn v 2 in
+                  (* Try to determine if the closure corresponds to a
+                    partially-applied function. *)
+                  match D.symbol_at_pc partial_app_pc with
+                  | None -> None, pc
+                  | Some symbol ->
+                    match Naming_conventions.is_currying_wrapper symbol with
                     | None -> None, pc
-                    | Some arity when arity <= 1 ->
-                      (* The function should have more than 1 arg. *)
-                      None, pc
-                    | Some _arity ->
-                      Some (total_num_args, num_args_so_far),
-                        V.field_as_addr_exn v 2
-        in
-        let partial, partial_args =
-          match partial with
-          | None -> "", ""
-          | Some (total_num_args, args_so_far) ->
-            "partial ",
-              Printf.sprintf " (got %d of %d args)" args_so_far total_num_args
-        in
-        match
-          D.filename_and_line_number_of_pc pc
-            ~use_previous_line_number_if_on_boundary:true
-        with
-        | None ->
-          Format.fprintf formatter "<%sfun> (%a)%s" partial
-            D.Target_memory.print_addr pc partial_args
-        | Some (filename, Some line) ->
-          Format.fprintf formatter "<%sfun> (%s:%d)%s" partial filename line
-            partial_args
-        | Some (filename, None) ->
-          Format.fprintf formatter "<%sfun> (%s, %a)%s" partial filename
-            D.Target_memory.print_addr pc partial_args
+                    | Some (total_num_args, num_args_so_far) ->
+                      (* Find the original closure in order to determine which
+                         function is partially applied.  (See comments about
+                         currying functions in cmmgen.ml in the compiler
+                         source.) *)
+                      match begin
+                        let v = ref v in
+                        for _i = 1 to num_args_so_far do
+                          if V.size_exn !v <> 5 then raise Exit;
+                          match V.field_exn !v 4 with
+                          | None -> raise Exit
+                          | Some new_v -> v := new_v
+                        done;
+                        !v
+                      end with
+                      | exception Exit -> None, pc
+                      | v ->
+                        (* This should be the original function. *)
+                        match V.field_exn v 1 with
+                        | None -> None, pc
+                        | Some arity ->
+                          match V.int arity with
+                          | None -> None, pc
+                          | Some arity when arity <= 1 ->
+                            (* The function should have more than 1 arg. *)
+                            None, pc
+                          | Some _arity ->
+                            Some (total_num_args, num_args_so_far),
+                              V.field_as_addr_exn v 2
+          in
+          let partial, partial_args =
+            match partial with
+            | None -> "", ""
+            | Some (total_num_args, args_so_far) ->
+              "partial ",
+                Printf.sprintf " (got %d of %d args)" args_so_far total_num_args
+          in
+          match
+            D.filename_and_line_number_of_pc pc
+              ~use_previous_line_number_if_on_boundary:true
+          with
+          | None ->
+            Format.fprintf formatter "<%sfun> (%a)%s" partial
+              D.Target_memory.print_addr pc partial_args
+          | Some (filename, Some line) ->
+            Format.fprintf formatter "<%sfun> (%s:%d)%s" partial filename line
+              partial_args
+          | Some (filename, None) ->
+            Format.fprintf formatter "<%sfun> (%s, %a)%s" partial filename
+              D.Target_memory.print_addr pc partial_args
       end
     with D.Read_error -> Format.fprintf formatter "<closure?>"
 
@@ -553,33 +582,36 @@ module Make (D : Debugger.S) = struct
     if V.size_exn v < 2 then
       Format.fprintf formatter "<malformed custom block>"
     else
-      let custom_ops = V.field_exn v 0 in
-      let identifier = V.c_string_field_exn custom_ops 0 in
-      let data_ptr = V.field_as_addr_exn v 1 in
-      match Naming_conventions.examine_custom_block_identifier identifier with
-      | Bigarray ->
-        Format.fprintf formatter "<Bigarray: data at %a>"
-          D.Target_memory.print_addr data_ptr
-      | Systhreads_mutex ->
-        Format.fprintf formatter "<Mutex.t %a> (* systhreads *)"
-          D.Target_memory.print_addr data_ptr
-      | Systhreads_condition ->
-        Format.fprintf formatter "<Condition.t %a> (* systhreads *)"
-          D.Target_memory.print_addr data_ptr
-      | Int32 ->
-        Format.fprintf formatter "%ld : int32"
-          (D.Target_memory.read_int32_exn data_ptr)
-      | Int64 ->
-        Format.fprintf formatter "%Ld : int64"
-          (D.Target_memory.read_int64_exn data_ptr)
-      | Channel ->
-        (* CR mshinwell: use a better means of retrieving the fd *)
-        Format.fprintf formatter "<channel on fd %Ld>"
-          (D.Target_memory.read_int64_exn data_ptr)
-      | Unknown ->
-        Format.fprintf formatter "<custom block '%s' pointing at %a>"
-          identifier
-          D.Target_memory.print_addr data_ptr
+      match V.field_exn v 0 with
+      | None ->
+        Format.fprintf formatter "<custom block; ops pointer unavailable>"
+      | Some custom_ops ->
+        let identifier = V.c_string_field_exn custom_ops 0 in
+        let data_ptr = V.field_as_addr_exn v 1 in
+        match Naming_conventions.examine_custom_block_identifier identifier with
+        | Bigarray ->
+          Format.fprintf formatter "<Bigarray: data at %a>"
+            D.Target_memory.print_addr data_ptr
+        | Systhreads_mutex ->
+          Format.fprintf formatter "<Mutex.t %a> (* systhreads *)"
+            D.Target_memory.print_addr data_ptr
+        | Systhreads_condition ->
+          Format.fprintf formatter "<Condition.t %a> (* systhreads *)"
+            D.Target_memory.print_addr data_ptr
+        | Int32 ->
+          Format.fprintf formatter "%ld : int32"
+            (D.Target_memory.read_int32_exn data_ptr)
+        | Int64 ->
+          Format.fprintf formatter "%Ld : int64"
+            (D.Target_memory.read_int64_exn data_ptr)
+        | Channel ->
+          (* CR mshinwell: use a better means of retrieving the fd *)
+          Format.fprintf formatter "<channel on fd %Ld>"
+            (D.Target_memory.read_int64_exn data_ptr)
+        | Unknown ->
+          Format.fprintf formatter "<custom block '%s' pointing at %a>"
+            identifier
+            D.Target_memory.print_addr data_ptr
 
   let print t ~scrutinee ~dwarf_type ~summary ~max_depth
         ~cmt_file_search_path ~formatter =

@@ -286,8 +286,32 @@ monda_value_struct_elt(struct value* v, value field_name)
 {
   struct value* found;
 
-  found = value_struct_elt(&v, NULL, String_val(field_name), NULL,
-    "libmonda error: field not found (monda_value_struct_elt)");
+  TRY {
+    found = value_struct_elt(&v, NULL, String_val(field_name), NULL,
+      "libmonda error: field not found (monda_value_struct_elt)");
+  }
+  CATCH (ex, RETURN_MASK_ALL) {
+    return (value) 0;
+  }
+  END_CATCH
 
   return (value) found;
+}
+
+static const uint64_t zero = (uint64_t) 0;
+
+CAMLprim const gdb_byte*
+monda_value_contents(struct value* v)
+{
+  const gdb_byte* contents;
+
+  TRY {
+    contents = value_contents(v);
+  }
+  CATCH (ex, RETURN_MASK_ALL) {
+    return (const gdb_byte*) &zero;
+  }
+  END_CATCH
+
+  return contents;
 }

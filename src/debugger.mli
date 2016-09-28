@@ -216,8 +216,9 @@ module type S = sig
     (** Analogous to [Obj.size].  Reads from the target's memory. *)
     val size_exn : t -> int
 
-    (** Analogous to [Obj.field].  Reads from the target's memory. *)
-    val field_exn : t -> int -> t
+    (** Analogous to [Obj.field].  Reads from the target's memory.
+        Returns [None] if the value is unavailable. *)
+    val field_exn : t -> int -> t option
 
     (** Like [field_exn], but for use when the value contains naked
         pointers (e.g. code pointers in closures). *)
