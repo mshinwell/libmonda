@@ -72,10 +72,8 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   CAMLlocal4(v_type, v_stream, v_value, v_search_path);
   CAMLlocal1(v_val);
   CAMLlocalN(args, 8);
-  struct gdb_exception exn;
   static value* callback = NULL;
   int is_synthetic_pointer;
-  int failed = 0;
 
   /* The try/catch is required so we don't leave local roots incorrectly
      registered in the case of an exception.
@@ -100,8 +98,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
     is_synthetic_pointer =
       (value_lval_const(val) == lval_computed
         && value_bits_synthetic_pointer(val, 0, sizeof(CORE_ADDR) * 8));
-
-    /*
+/*
     fprintf(stderr, "monda_val_print.  SP %d *valaddr=%p v_value=%p  value_lval_const=%d lval_funcs=%p lazy=%d\n",
       is_synthetic_pointer,
       (void*) *(intnat*) valaddr,
@@ -114,44 +111,47 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
     /* CR mshinwell: improve this test */
     if ((TYPE_NAME(type) == NULL && !is_synthetic_pointer)
         || (is_synthetic_pointer && TYPE_CODE(type) != TYPE_CODE_PTR)) {
+      /*
+      fprintf(stderr, "monda_val_print -> c_val_print (1)\n");
+      fflush(stderr);
+      */
       c_val_print(type, valaddr, embedded_offset, address, stream, recurse,
                   val, options, depth);
     }
+    else {
+      v_type = caml_copy_string(TYPE_NAME(type) == NULL ? "" : TYPE_NAME(type));
+      v_stream = caml_copy_int64((uint64_t) stream);
+      v_search_path = caml_copy_string(search_path ? search_path : "");
+      v_val = caml_copy_nativeint((intnat) val);
 
-    v_type = caml_copy_string(TYPE_NAME(type) == NULL ? "" : TYPE_NAME(type));
-    v_stream = caml_copy_int64((uint64_t) stream);
-    v_search_path = caml_copy_string(search_path ? search_path : "");
-    v_val = caml_copy_nativeint((intnat) val);
+      Store_field(args, 0, Val_bool(is_synthetic_pointer));
+      Store_field(args, 1, v_value);
+      Store_field(args, 2, v_val);
+      Store_field(args, 3, v_stream);
+      Store_field(args, 4, v_type);
+      Store_field(args, 5, Val_bool(options->summary));
+      Store_field(args, 6, Val_long(value_printer_max_depth));
+      Store_field(args, 7, v_search_path);
 
-    Store_field(args, 0, Val_bool(is_synthetic_pointer));
-    Store_field(args, 1, v_value);
-    Store_field(args, 2, v_val);
-    Store_field(args, 3, v_stream);
-    Store_field(args, 4, v_type);
-    Store_field(args, 5, Val_bool(options->summary));
-    Store_field(args, 6, Val_long(value_printer_max_depth));
-    Store_field(args, 7, v_search_path);
+      /*
+      fprintf(stderr, "monda_val_print -> OCaml printer.  Type '%s'\n", TYPE_NAME(type));
+      fflush(stderr); */
 
-    /*
-    fprintf(stderr, "monda_val_print -> OCaml printer.  Type '%s'\n", TYPE_NAME(type));
-    fflush(stderr);
-    */
-
-    if (caml_callbackN(*callback, 8, args) == Val_false) {
-      c_val_print(type, valaddr, embedded_offset, address, stream, recurse,
-        val, options, depth);
+      if (caml_callbackN(*callback, 8, args) == Val_false) {
+        /*
+        fprintf(stderr, "monda_val_print -> c_val_print (2)\n");
+        fflush(stderr);
+        */
+        c_val_print(type, valaddr, embedded_offset, address, stream, recurse,
+          val, options, depth);
+      }
     }
   }
-  CATCH (ex, RETURN_MASK_ALL) {
-    failed = 1;
-    exn = ex;
-  }
-  END_CATCH
-
-  if (failed) {
+  CATCH (exn, RETURN_MASK_ALL) {
     CAMLdrop;
     throw_exception(exn);
   }
+  END_CATCH
 
   CAMLreturn0;
 }
@@ -190,24 +190,28 @@ monda_evaluate (const char* expr, int length, char** type_name_out)
 printf("monda_evaluate '%s'\n", expr);fflush(stdout);
 */
 
-  TRY {
-    if (cb == NULL) {
-      cb = caml_named_value ("From_gdb_ocaml.evaluate");
-      assert(cb != NULL);
-    }
+  /* Note for the future: it seems that installing an exception handler in
+     this function causes a segfault when trying to run a NULL gdb cleanup
+     function. */
 
-    v_expr = caml_alloc_string(length);
-    memcpy(String_val(v_expr), expr, length);
+  if (cb == NULL) {
+    cb = caml_named_value ("From_gdb_ocaml.evaluate");
+    assert(cb != NULL);
+  }
 
-    v_stream = caml_copy_int64((uint64_t) stderr_fileopen());
+  v_expr = caml_alloc_string(length);
+  memcpy(String_val(v_expr), expr, length);
 
-    v_result = caml_callback3(*cb, v_expr,
-      caml_copy_string(search_path ? search_path : ""),
-      v_stream);
+  /* We assume [stderr_fileopen] doesn't raise any exceptions. */
+  v_stream = caml_copy_int64((uint64_t) stderr_fileopen());
 
-    if (v_result == Val_unit /* Failure */) {
-      CAMLreturn((CORE_ADDR) 0);  /* CR mshinwell: suboptimal? */
-    }
+  v_result = caml_callback3(*cb, v_expr,
+    caml_copy_string(search_path ? search_path : ""),
+    v_stream);
+
+  if (v_result == Val_unit /* Failure */) {
+    CAMLreturn((CORE_ADDR) 0);  /* CR mshinwell: suboptimal? */
+  }
   /*
   printf("monda_evaluate is returning %p, type name '%s'\n",
     (void*)Nativeint_val(Field(v_result, 0)),
@@ -215,12 +219,7 @@ printf("monda_evaluate '%s'\n", expr);fflush(stdout);
   fflush(stdout);
   */
 
-    *type_name_out = xstrdup(String_val(Field(v_result, 1)));
-  }
-  CATCH (ex, RETURN_MASK_ALL) {
-    failed = 1;
-  }
-  END_CATCH
+  *type_name_out = xstrdup(String_val(Field(v_result, 1)));
 
   CAMLreturn(
     failed ? (CORE_ADDR) 0 : (CORE_ADDR) Nativeint_val(Field(v_result, 0)));
