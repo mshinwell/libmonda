@@ -72,8 +72,10 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   CAMLlocal4(v_type, v_stream, v_value, v_search_path);
   CAMLlocal1(v_val);
   CAMLlocalN(args, 8);
+  struct gdb_exception exn;
   static value* callback = NULL;
   int is_synthetic_pointer;
+  int failed = 0;
 
   /* The try/catch is required so we don't leave local roots incorrectly
      registered in the case of an exception.
@@ -141,10 +143,15 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
     }
   }
   CATCH (ex, RETURN_MASK_ALL) {
-    CAMLdrop;
-    throw_exception(ex);
+    failed = 1;
+    exn = ex;
   }
   END_CATCH
+
+  if (failed) {
+    CAMLdrop;
+    throw_exception(exn);
+  }
 
   CAMLreturn0;
 }
@@ -178,6 +185,7 @@ monda_evaluate (const char* expr, int length, char** type_name_out)
   CAMLlocal2(v_stream, v_expr);
   value v_result;
   static value* cb = NULL;
+  int failed = 0;
 /*
 printf("monda_evaluate '%s'\n", expr);fflush(stdout);
 */
@@ -210,12 +218,12 @@ printf("monda_evaluate '%s'\n", expr);fflush(stdout);
     *type_name_out = xstrdup(String_val(Field(v_result, 1)));
   }
   CATCH (ex, RETURN_MASK_ALL) {
-    CAMLdrop;
-    throw_exception(ex);
+    failed = 1;
   }
   END_CATCH
 
-  CAMLreturn((CORE_ADDR) Nativeint_val(Field(v_result, 0)));
+  CAMLreturn(
+    failed ? (CORE_ADDR) 0 : (CORE_ADDR) Nativeint_val(Field(v_result, 0)));
 }
 
 void

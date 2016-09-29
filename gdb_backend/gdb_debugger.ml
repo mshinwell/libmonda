@@ -32,6 +32,10 @@ type target_addr = nativeint
 
 let zero_target_addr = 0n
 
+(* Note: GDB functions may not be called directly from this file; they need
+   to go through a wrapper (in to_gdb.c) that catches any GDB exceptions
+   that may be thrown. *)
+
 external caml_copy_int32 : Obj.t -> Int32.t = "caml_copy_int32"
 external caml_copy_int64 : Obj.t -> Int64.t = "caml_copy_int64"
 external caml_copy_nativeint : Obj.t -> Nativeint.t = "caml_copy_nativeint"

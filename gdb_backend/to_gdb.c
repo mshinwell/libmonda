@@ -241,7 +241,7 @@ monda_find_named_value(value v_name)
   }
 
   v_found_value = caml_copy_nativeint(address);
-  v_dwarf_type = caml_copy_string(type);
+  v_dwarf_type = caml_copy_string(TYPE_NAME(type) ? TYPE_NAME(type) : "");
 
   v_option = caml_alloc_small(2, 0 /* Found */);
   Field(v_option, 0) = v_found_value;
@@ -341,7 +341,7 @@ monda_value_struct_elt(struct value* v, value field_name)
       "libmonda error: field not found (monda_value_struct_elt)");
   }
   CATCH (ex, RETURN_MASK_ALL) {
-    found = (value*) NULL;
+    found = (struct value*) NULL;
   }
   END_CATCH
 

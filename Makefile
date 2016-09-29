@@ -39,7 +39,7 @@ OCAML_ROOT=`ocamlopt -where`
 OCAMLOPT=ocamlopt -verbose -I +compiler-libs -I ./src -g -fPIC \
   -I ./gdb_backend
 
-CC=gcc -O0 -fPIC -g \
+CC=gcc -O0 -fPIC -Werror -g \
   -I$(OCAML_ROOT) \
   -I$(GDB_ROOT)/gdb \
   -I$(GDB_ROOT)/gdb/common \
