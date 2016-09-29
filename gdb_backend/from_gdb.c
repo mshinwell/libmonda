@@ -248,3 +248,27 @@ gdb_ocaml_search_path(value v_unit)
   return caml_copy_string(search_path);
 }
 */
+
+char*
+monda_demangle (char* mangled, int options)
+{
+  CAMLparam0();
+  CAMLlocal2(caml_res, caml_mangled);
+  static value*cb = NULL;
+  char* res = NULL;
+
+  if (cb == NULL) {
+    cb = caml_named_value ("From_gdb_ocaml.demangle");
+    assert(cb != NULL);
+  }
+
+  caml_mangled = caml_copy_string(mangled);
+  caml_res = caml_callback(*cb, caml_mangled);
+
+  if (Is_block(caml_res)) {
+    gdb_assert(Tag_val(caml_res) == 0 && Wosize_val(caml_res) == 1);
+    res = strdup(String_val(Field(caml_res, 0)));
+  }
+
+  CAMLreturnT (char*, res);
+}
