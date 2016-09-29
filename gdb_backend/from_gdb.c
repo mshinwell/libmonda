@@ -73,7 +73,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   CAMLlocal1(v_val);
   CAMLlocalN(args, 8);
   static value* callback = NULL;
-  value is_synthetic_pointer;
+  int is_synthetic_pointer;
 
   if (callback == NULL) {
     callback = caml_named_value("From_gdb_ocaml.print_value");
@@ -103,8 +103,17 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   /* CR mshinwell: improve this test */
   if ((TYPE_NAME(type) == NULL && !is_synthetic_pointer)
        || (is_synthetic_pointer && TYPE_CODE(type) != TYPE_CODE_PTR)) {
-/*    fprintf(stderr, "monda_val_print -> print_as_c 1\n");*/
-    goto print_as_c;
+    /* The try/catch is required so we don't leave local roots incorrectly
+       registered in the case of an exception. */
+    TRY {
+      c_val_print(type, valaddr, embedded_offset, address, stream, recurse,
+                  val, options, depth);
+    }
+    CATCH (ex, RETURN_MASK_ALL) {
+      CAMLdrop;
+      throw_exception(ex);
+    }
+    END_CATCH
   }
 
   v_type = caml_copy_string(TYPE_NAME(type));
@@ -125,12 +134,18 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   fprintf(stderr, "monda_val_print -> OCaml printer.  Type '%s'\n", TYPE_NAME(type));
   fflush(stderr);
   */
-  if (caml_callbackN(*callback, 8, args) == Val_false) {
-   /* fprintf(stderr, "monda_val_print -> print_as_c 2\n");*/
-print_as_c:
-    c_val_print(type, valaddr, embedded_offset, address, stream, recurse,
-      val, options, depth);
+
+  TRY {
+    if (caml_callbackN(*callback, 8, args) == Val_false) {
+      c_val_print(type, valaddr, embedded_offset, address, stream, recurse,
+        val, options, depth);
+    }
   }
+  CATCH (ex, RETURN_MASK_ALL) {
+    CAMLdrop;
+    throw_exception(ex);
+  }
+  END_CATCH
 
   CAMLreturn0;
 }
@@ -178,9 +193,16 @@ printf("monda_evaluate '%s'\n", expr);fflush(stdout);
 
   v_stream = caml_copy_int64((uint64_t) stderr_fileopen());
 
-  v_result = caml_callback3(*cb, v_expr,
-    caml_copy_string(search_path ? search_path : ""),
-    v_stream);
+  TRY {
+    v_result = caml_callback3(*cb, v_expr,
+      caml_copy_string(search_path ? search_path : ""),
+      v_stream);
+  }
+  CATCH (ex, RETURN_MASK_ALL) {
+    CAMLdrop;
+    throw_exception(ex);
+  }
+  END_CATCH
 
   if (v_result == Val_unit /* Failure */) {
     CAMLreturn((CORE_ADDR) 0);  /* CR mshinwell: suboptimal? */
