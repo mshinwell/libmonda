@@ -95,7 +95,7 @@ end = struct
     -> buf:Bytes.t
     -> size:(target_addr [@unboxed])
     -> (int [@untagged])
-    = "_native_only" "target_read_memory" [@@noalloc]
+    = "_native_only" "monda_target_read_memory" [@@noalloc]
 
   module Ui_file = struct
     type t = private Int64.t
@@ -104,7 +104,7 @@ end = struct
        : string
       -> (t [@unboxed])
       -> unit
-      = "_native_only" "fputs_filtered" [@@noalloc]
+      = "_native_only" "monda_fputs_filtered" [@@noalloc]
 
     let print_filtered t text =
       fputs_filtered text t
@@ -116,7 +116,7 @@ end = struct
     -> func_start:out_of_heap_buffer
     -> func_end:out_of_heap_buffer
     -> (int [@untagged])
-    = "_native_only" "find_pc_partial_function" [@@noalloc]
+    = "_native_only" "monda_find_pc_partial_function" [@@noalloc]
 
   external find_pc_line
      : addr:(target_addr [@unboxed])
@@ -290,7 +290,7 @@ module Synthetic_ptr = struct
     -> offset_in_bits:(int [@untagged])
     -> length_in_bits:(int [@untagged])
     -> (int [@untagged])
-    = "_native_only" "value_bits_synthetic_pointer" [@@noalloc]
+    = "_native_only" "monda_value_bits_synthetic_pointer" [@@noalloc]
 
   let is_synthetic t =
     (value_bits_synthetic_pointer t
@@ -300,7 +300,7 @@ module Synthetic_ptr = struct
   external value_as_long
      : (t [@unboxed])
     -> (nativeint [@unboxed])
-    = "_native_only" "value_as_long" [@@noalloc]
+    = "_native_only" "monda_value_as_long" [@@noalloc]
 
   (* N.B. [monda_value_struct_elt] does [value_ind] (which can handle implicit
      pointers) before looking up the field name in the resulting struct. *)

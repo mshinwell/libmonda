@@ -36,6 +36,15 @@
 #include "symtab.h"
 #include "value.h"
 
+/* Remember: No gdb exceptions may escape from the functions called from OCaml
+   in this file.  (See from_gdb.c for an explanation.)
+
+   Functions here that register roots or catch gdb exceptions are structured so
+   that there is a single return point.  This avoids any question about
+   whether returns are permissible inside the try/catch blocks and ensures
+   that we do not need to use [CAMLdrop].
+*/
+
 static int
 compilation_directories_for_source_file_callback(struct symtab* symtab,
                                                  void* directories_list_head)
@@ -64,10 +73,16 @@ monda_compilation_directories_for_source_file(value v_file)
   CAMLparam0();
   CAMLlocal1(v_directories_list);
 
-  v_directories_list = Val_long(0);
-  iterate_over_symtabs(String_val(v_file),
-    &compilation_directories_for_source_file_callback,
-    &v_directories_list);  /* take the address since we may cause a GC */
+  TRY {
+    v_directories_list = Val_long(0);
+    iterate_over_symtabs(String_val(v_file),
+      &compilation_directories_for_source_file_callback,
+      &v_directories_list);  /* take the address since we may cause a GC */
+  }
+  CATCH (ex, RETURN_MASK_ALL) {
+    v_directories_list = Val_long(0);
+  }
+  END_CATCH
 
   CAMLreturn(v_directories_list);
 }
@@ -79,29 +94,36 @@ monda_find_pc_line (CORE_ADDR addr, int not_current)
   value result;
   CAMLlocal3(v_line, v_filename, v_filename_and_line);
 
-  struct symtab_and_line sal;
-  sal = find_pc_line(addr, not_current);
+  TRY {
+    struct symtab_and_line sal;
+    sal = find_pc_line(addr, not_current);
 
-  if (!sal.symtab) {
-    CAMLreturn(Val_long(0) /* None */);
+    if (!sal.symtab) {
+      result = Val_long(0); /* None */
+    }
+    else {
+      v_filename = caml_copy_string(sal.symtab->filename);
+
+      if (sal.line != 0) {
+        v_line = caml_alloc_small(1, 0);
+        Field(v_line, 0) = Val_long(sal.line);
+      }
+      else {
+        v_line = Val_unit;
+      }
+
+      v_filename_and_line = caml_alloc_small(2, 0);
+      Field(v_filename_and_line, 0) = v_filename;
+      Field(v_filename_and_line, 1) = v_line;
+
+      result = caml_alloc_small(1, 0 /* Some */);
+      Field(result, 0) = v_filename_and_line;
+    }
   }
-
-  v_filename = caml_copy_string(sal.symtab->filename);
-
-  if (sal.line != 0) {
-    v_line = caml_alloc_small(1, 0);
-    Field(v_line, 0) = Val_long(sal.line);
+  CATCH (ex, RETURN_MASK_ALL) {
+    result = Val_long(0);  /* None */
   }
-  else {
-    v_line = Val_unit;
-  }
-
-  v_filename_and_line = caml_alloc_small(2, 0);
-  Field(v_filename_and_line, 0) = v_filename;
-  Field(v_filename_and_line, 1) = v_line;
-
-  result = caml_alloc_small(1, 0 /* Some */);
-  Field(result, 0) = v_filename_and_line;
+  END_CATCH
 
   CAMLreturn(result);
 }
@@ -174,40 +196,52 @@ monda_find_named_value(value v_name)
   find_named_value_data output;
   CAMLlocal2(v_found_value, v_dwarf_type);
   value v_option;
+  CORE_ADDR address;
+  struct type* type;
+  int failed = 0;
 
-  selected_frame = get_selected_frame_if_set();
-  if (selected_frame != NULL) {
-    if (get_frame_pc_if_available(selected_frame, &pc)) {
-      block = get_frame_block(selected_frame, NULL);
-      if (block != NULL) {
-        output.name_to_find = String_val(v_name);
-        output.frame = selected_frame;
-        output.block = block;
-        output.found_value = NULL;
-        output.stage = LOCALS;
-        iterate_over_block_local_vars(output.block,
-          find_named_value_callback, &output);
-        if (!output.found_value) {
-          function = get_frame_function(selected_frame);
-          if (function != NULL) {
-            block = SYMBOL_BLOCK_VALUE(function);
-            output.block = block;
-            output.stage = ARGUMENTS;
-            iterate_over_block_arg_vars(output.block,
-              find_named_value_callback, &output);
+  TRY {
+    selected_frame = get_selected_frame_if_set();
+    if (selected_frame != NULL) {
+      if (get_frame_pc_if_available(selected_frame, &pc)) {
+        block = get_frame_block(selected_frame, NULL);
+        if (block != NULL) {
+          output.name_to_find = String_val(v_name);
+          output.frame = selected_frame;
+          output.block = block;
+          output.found_value = NULL;
+          output.stage = LOCALS;
+          iterate_over_block_local_vars(output.block,
+            find_named_value_callback, &output);
+          if (!output.found_value) {
+            function = get_frame_function(selected_frame);
+            if (function != NULL) {
+              block = SYMBOL_BLOCK_VALUE(function);
+              output.block = block;
+              output.stage = ARGUMENTS;
+              iterate_over_block_arg_vars(output.block,
+                find_named_value_callback, &output);
+            }
           }
         }
       }
     }
+    if (output.found_value) {
+      address = value_as_address(output.found_value);
+      type = value_type(output.found_value);
+    }
   }
+  CATCH (ex, RETURN_MASK_ALL) {
+    failed = 1;
+  }
+  END_CATCH
 
-  if (!output.found_value) {
+  if (failed || !output.found_value) {
     CAMLreturn(Val_unit);  /* None */
   }
 
-  v_found_value = caml_copy_nativeint(value_as_address(output.found_value));
-  v_dwarf_type = caml_copy_string(
-    TYPE_NAME(value_type(output.found_value)));
+  v_found_value = caml_copy_nativeint(address);
+  v_dwarf_type = caml_copy_string(type);
 
   v_option = caml_alloc_small(2, 0 /* Found */);
   Field(v_option, 0) = v_found_value;
@@ -229,54 +263,70 @@ monda_find_global_symbol(value v_name)
   struct block_symbol sym;
   uint64_t sym_value;
 
-  sym = lookup_symbol(String_val(v_name), NULL, VAR_DOMAIN, NULL);
+  TRY {
+    sym = lookup_symbol(String_val(v_name), NULL, VAR_DOMAIN, NULL);
 
-  if (!sym.symbol) {
-    /*fprintf(stderr, "%s not found from gdb\n", String_val(v_name));*/
-    CAMLreturn(Val_unit);  /* None */
-  }
-
-  switch (SYMBOL_CLASS(sym.symbol)) {
-    case LOC_CONST:  /* Let_symbol / constant case */
-      sym_value = SYMBOL_VALUE(sym.symbol);
-      break;
-
-    case LOC_COMPUTED: { /* Initialize_symbol / inconstant case */
-      struct value* v;
-
-      if (SYMBOL_COMPUTED_OPS(sym.symbol)->read_needs_frame(sym.symbol)
-            || SYMBOL_COMPUTED_OPS(sym.symbol)->location_has_loclist) {
-        /* We jolly well shouldn't need a frame; we should also not be
-           PC-dependent (i.e. no location list). */
-        CAMLreturn(Val_unit);
-      }
-
-      v = SYMBOL_COMPUTED_OPS(sym.symbol)->read_variable(sym.symbol, NULL);
-      if (v == NULL) {
-        CAMLreturn(Val_unit);
-      }
-
-      sym_value = (uint64_t) value_as_address(v);
-
-      break;
+    if (!sym.symbol) {
+      /*fprintf(stderr, "%s not found from gdb\n", String_val(v_name));*/
+      v_option = Val_unit;  /* None */
     }
+    else {
+      int failed = 0;
 
-    default:
-      CAMLreturn(Val_unit);
+      switch (SYMBOL_CLASS(sym.symbol)) {
+        case LOC_CONST:  /* Let_symbol / constant case */
+          sym_value = SYMBOL_VALUE(sym.symbol);
+          break;
+
+        case LOC_COMPUTED: { /* Initialize_symbol / inconstant case */
+          struct value* v;
+
+          if (SYMBOL_COMPUTED_OPS(sym.symbol)->read_needs_frame(sym.symbol)
+                || SYMBOL_COMPUTED_OPS(sym.symbol)->location_has_loclist) {
+            /* We jolly well shouldn't need a frame; we should also not be
+               PC-dependent (i.e. no location list). */
+            failed = 1;
+          }
+
+          v = SYMBOL_COMPUTED_OPS(sym.symbol)->read_variable(sym.symbol, NULL);
+          if (v == NULL) {
+            failed = 1;
+          }
+          else {
+            sym_value = (uint64_t) value_as_address(v);
+          }
+
+          break;
+        }
+
+        default:
+          failed = 1;
+          break;
+      }
+    /*
+      fprintf(stderr, "%s found to have value %p, type %s\n",
+              String_val(v_name),
+              SYMBOL_VALUE_ADDRESS(sym.symbol),
+              TYPE_NAME(SYMBOL_TYPE(sym.symbol)));*/
+
+      if (failed) {
+        v_option = Val_unit;  /* None */
+      }
+      else {
+        v_found_value = caml_copy_nativeint(sym_value);
+        v_dwarf_type = caml_copy_string(
+          TYPE_NAME(SYMBOL_TYPE(sym.symbol)));
+
+        v_option = caml_alloc_small(2, 0 /* Found */);
+        Field(v_option, 0) = v_found_value;
+        Field(v_option, 1) = v_dwarf_type;
+      }
+    }
   }
-/*
-  fprintf(stderr, "%s found to have value %p, type %s\n",
-          String_val(v_name),
-          SYMBOL_VALUE_ADDRESS(sym.symbol),
-          TYPE_NAME(SYMBOL_TYPE(sym.symbol)));*/
-
-  v_found_value = caml_copy_nativeint(sym_value);
-  v_dwarf_type = caml_copy_string(
-    TYPE_NAME(SYMBOL_TYPE(sym.symbol)));
-
-  v_option = caml_alloc_small(2, 0 /* Found */);
-  Field(v_option, 0) = v_found_value;
-  Field(v_option, 1) = v_dwarf_type;
+  CATCH (ex, RETURN_MASK_ALL) {
+    v_option = Val_unit;  /* None */
+  }
+  END_CATCH
 
   CAMLreturn(v_option);
 }
@@ -291,7 +341,7 @@ monda_value_struct_elt(struct value* v, value field_name)
       "libmonda error: field not found (monda_value_struct_elt)");
   }
   CATCH (ex, RETURN_MASK_ALL) {
-    return (value) 0;
+    found = (value*) NULL;
   }
   END_CATCH
 
@@ -309,9 +359,90 @@ monda_value_contents(struct value* v)
     contents = value_contents(v);
   }
   CATCH (ex, RETURN_MASK_ALL) {
-    return (const gdb_byte*) &zero;
+    contents = (const gdb_byte*) &zero;
   }
   END_CATCH
 
   return contents;
+}
+
+CAMLprim int
+monda_target_read_memory(CORE_ADDR memaddr, gdb_byte* myaddr,
+                         ssize_t len)
+{
+  int retval;
+
+  TRY {
+    retval = target_read_memory(memaddr, myaddr, len);
+  }
+  CATCH (ex, RETURN_MASK_ALL) {
+    retval = -1;
+  }
+  END_CATCH
+
+  return retval;
+}
+
+CAMLprim value
+monda_fputs_filtered(const char* msg, struct ui_file* file)
+{
+  TRY {
+    fputs_filtered(msg, file);
+  }
+  CATCH (ex, RETURN_MASK_ALL) {
+    do {} while (0);
+  }
+  END_CATCH
+
+  return Val_unit;
+}
+
+CAMLprim int
+monda_find_pc_partial_function(CORE_ADDR addr, const char** fun_name,
+                               CORE_ADDR* start_addr, CORE_ADDR* end_addr)
+{
+  int retval;
+
+  TRY {
+    retval = find_pc_partial_function(addr, fun_name, start_addr, end_addr);
+  }
+  CATCH (ex, RETURN_MASK_ALL) {
+    retval = -1;
+  }
+  END_CATCH
+
+  return retval;
+}
+
+CAMLprim int
+monda_value_bits_synthetic_pointer(const struct value* value,
+                                   int offset, int length)
+{
+  int retval;
+
+  TRY {
+    retval = value_bits_synthetic_pointer(value, offset, length);
+  }
+  CATCH (ex, RETURN_MASK_ALL) {
+    retval = -1;
+  }
+  END_CATCH
+
+  return retval;
+}
+
+CAMLprim LONGEST
+monda_value_as_long(struct value* value)
+{
+  LONGEST retval;
+
+  TRY {
+    retval = value_as_long(value);
+  }
+  CATCH (ex, RETURN_MASK_ALL) {
+    retval = (LONGEST) 0;
+  }
+  END_CATCH
+
+  return retval;
 }
