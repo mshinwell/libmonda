@@ -116,7 +116,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
     END_CATCH
   }
 
-  v_type = caml_copy_string(TYPE_NAME(type));
+  v_type = caml_copy_string(TYPE_NAME(type) == NULL ? "" : TYPE_NAME(type));
   v_stream = caml_copy_int64((uint64_t) stream);
   v_search_path = caml_copy_string(search_path ? search_path : "");
   v_val = caml_copy_nativeint((intnat) val);
