@@ -32,7 +32,8 @@
 #   ./configure -prefix ... -cc "gcc -fPIC" -aspp "gcc -c -fPIC"
 
 #GDB_ROOT=/mnt/local/sda1/mshinwell/mshinwell-gdb
-GDB_ROOT=/Users/mark/dev/mshinwell-gdb
+#GDB_ROOT=/Users/mark/dev/mshinwell-gdb
+GDB_ROOT=/home/mark/dev/mshinwell-gdb
 
 OCAML_ROOT=`ocamlopt -where`
 
@@ -41,17 +42,16 @@ OCAMLOPT=ocamlopt -verbose -I +compiler-libs -I ./src -g -fPIC \
 
 CC=gcc -O0 -fPIC -Werror -g \
   -I$(OCAML_ROOT) \
-  -I$(GDB_ROOT)/bfd \
   -I$(GDB_ROOT)/gdb \
   -I$(GDB_ROOT)/gdb/common \
   -I$(GDB_ROOT)/gdb/config \
   -DHAVE_CONFIG_H \
   -I$(GDB_ROOT)/include \
-  -I$(GDB_ROOT)/intl \
   -I$(GDB_ROOT)/gdb/gnulib/import \
-  -I$(GDB_ROOT)/gdb/build-gnulib/import \
-  -Wno-implicit-function-declaration \
-  -Wno-macro-redefined
+  -I$(GDB_ROOT)/gdb/build-gnulib/import
+
+#  -I$(GDB_ROOT)/bfd \
+#  -I$(GDB_ROOT)/intl \
 
 GDB_BACKEND=gdb_backend/gdb_debugger.mli \
   gdb_backend/gdb_debugger.ml \

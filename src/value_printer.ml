@@ -588,6 +588,15 @@ module Make (D : Debugger.S) = struct
       | Some custom_ops ->
         let identifier = V.c_string_field_exn custom_ops 0 in
         let data_ptr = V.field_as_addr_exn v 1 in
+        let integer ~suffix =
+          match V.field_exn v 1 with
+          | None ->
+            Format.fprintf formatter "<Int32.t (unavailable)>"
+          | Some i ->
+            match V.raw i with
+            | None -> Format.fprintf formatter "<Int32.t (unavailable)>"
+            | Some i -> Format.fprintf formatter "%nd%c" i suffix
+        in
         match Naming_conventions.examine_custom_block_identifier identifier with
         | Bigarray ->
           Format.fprintf formatter "<Bigarray: data at %a>"
@@ -598,12 +607,9 @@ module Make (D : Debugger.S) = struct
         | Systhreads_condition ->
           Format.fprintf formatter "<Condition.t %a> (* systhreads *)"
             D.Target_memory.print_addr data_ptr
-        | Int32 ->
-          Format.fprintf formatter "%ld : int32"
-            (D.Target_memory.read_int32_exn data_ptr)
-        | Int64 ->
-          Format.fprintf formatter "%Ld : int64"
-            (D.Target_memory.read_int64_exn data_ptr)
+        | Int32 -> integer ~suffix:'l'
+        | Int64 -> integer ~suffix:'L'
+        | Nativeint -> integer ~suffix:'n'
         | Channel ->
           (* CR mshinwell: use a better means of retrieving the fd *)
           Format.fprintf formatter "<channel on fd %Ld>"

@@ -58,6 +58,7 @@ type custom_block_identifier =
   | Systhreads_condition
   | Int32
   | Int64
+  | Nativeint
   | Channel
   | Unknown
 
@@ -67,5 +68,6 @@ let examine_custom_block_identifier = function
   | "_condition" -> Systhreads_condition
   | "_i" -> Int32
   | "_j" -> Int64
+  | "_n" -> Nativeint
   | "_chan" -> Channel
   | _ -> Unknown

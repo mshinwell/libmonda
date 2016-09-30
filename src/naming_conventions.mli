@@ -37,6 +37,7 @@ type custom_block_identifier =
   | Systhreads_condition
   | Int32
   | Int64
+  | Nativeint
   | Channel
   | Unknown
 
