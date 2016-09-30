@@ -105,8 +105,19 @@ and process_expression ~exp ((idents_to_types, app_points) as init) =
   | Texp_let (_rec, value_binding, exp) ->
     let acc = process_value_binding ~value_binding init in
     process_expression ~exp acc
-  | Texp_function (_label, cases, _partial) ->
-    process_cases ~cases init
+  | Texp_function (_label, ident, cases, _partial) ->
+    let idents_to_types =
+      (* The types of all the cases must be the same, so just use the first
+         case. *)
+      match cases with
+      | case::_ ->
+        String.Map.add (Ident.unique_name ident)
+          (case.Typedtree.c_lhs.Typedtree.pat_type,
+            case.Typedtree.c_lhs.Typedtree.pat_env)
+          idents_to_types
+      | _ -> idents_to_types
+    in
+    process_cases ~cases (idents_to_types, app_points)
   | Texp_apply (exp, args) ->
 (*
     (* CR mshinwell: what happens when [exp] has already been partially
