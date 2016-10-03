@@ -37,7 +37,7 @@ OCAMLOPT=$(OCAML_ROOT)/bin/ocamlopt -verbose -I +compiler-libs -I ./src \
   -g -fPIC -I ./gdb_backend
 
 CC=gcc -O0 -fPIC -Werror -g \
-  -I$(OCAML_ROOT) \
+  -I$(OCAML_ROOT)/lib/ocaml \
   -I$(GDB_ROOT)/gdb \
   -I$(GDB_ROOT)/gdb/common \
   -I$(GDB_ROOT)/gdb/config \
