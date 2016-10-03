@@ -27,18 +27,14 @@
 ##                                                                        ##
 ############################################################################
 
-# Building libmonda requires a PIC-enabled OCaml toolchain.  Produce that
-# by adding "-fPIC" to asmrun/Makefile and configuring thus:
-#   ./configure -prefix ... -cc "gcc -fPIC" -aspp "gcc -c -fPIC"
+# Building libmonda requires a PIC-enabled OCaml toolchain (configure
+# with -fPIC).
 
-#GDB_ROOT=/mnt/local/sda1/mshinwell/mshinwell-gdb
-#GDB_ROOT=/Users/mark/dev/mshinwell-gdb
-GDB_ROOT=/home/mark/dev/mshinwell-gdb
+GDB_ROOT=$(PREFIX)/libexec/gdb-ocaml.7.11/src
+OCAML_ROOT=$(PREFIX)
 
-OCAML_ROOT=`ocamlopt -where`
-
-OCAMLOPT=ocamlopt -verbose -I +compiler-libs -I ./src -g -fPIC \
-  -I ./gdb_backend
+OCAMLOPT=$(OCAML_ROOT)/bin/ocamlopt -verbose -I +compiler-libs -I ./src \
+  -g -fPIC -I ./gdb_backend
 
 CC=gcc -O0 -fPIC -Werror -g \
   -I$(OCAML_ROOT) \
