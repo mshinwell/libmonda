@@ -30,8 +30,10 @@
 # Building libmonda requires a PIC-enabled OCaml toolchain (configure
 # with -fPIC).
 
-GDB_ROOT=$(PREFIX)/libexec/gdb-ocaml.7.11/src
-OCAML_ROOT=$(PREFIX)
+#GDB_ROOT=$(PREFIX)/libexec/gdb-ocaml.7.11/src
+#OCAML_ROOT=$(PREFIX)
+GDB_ROOT=/mnt/local/sda1/mshinwell/mshinwell-gdb
+OCAML_ROOT=/mnt/local/sda1/mshinwell/mshinwell-ocaml2-install
 
 OCAMLOPT=$(OCAML_ROOT)/bin/ocamlopt -verbose -I +compiler-libs -I ./src \
   -g -fPIC -I ./gdb_backend

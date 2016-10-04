@@ -172,7 +172,7 @@ exception Read_error
 
 module Target_memory = struct
   let read_exn addr buf len =
-    if String.length buf < len
+    if Bytes.length buf < len
     then invalid_arg "read_exn: len > String.length buf"
     else begin
       let size = Nativeint.of_int len in
@@ -181,7 +181,14 @@ Printf.printf "About to read target memory at 0x%nx (size %nd)\n%!" addr size;
 *)
       let result = Gdb.target_read_memory ~addr ~buf ~size in
       if result <> 0 then begin
+        Printf.eprintf "Target memory read at 0x%nx (size %nd) failed\n%!"
+          addr size;
+        for i = 0 to Arch.size_addr do
+          Bytes.set buf i '\000'
+        done
+(*
         raise Read_error
+*)
       end
     end
 

@@ -222,6 +222,8 @@ module Make (D : Debugger.S) = struct
 
   let evaluate t ~path ~lvalue_or_rvalue ~must_be_mutable
         ~cmt_file_search_path ~formatter =
+    (* CR mshinwell: When in function Foo.f then we should search for "Foo.bar"
+       when looking for "bar", if it isn't a local or arg. *)
     let found ~starting_point ~dwarf_type ~rest_of_path =
       let type_expr_and_env =
         Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
