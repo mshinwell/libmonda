@@ -109,10 +109,8 @@ module Make (D : Debugger.S) = struct
     end else begin
       let formatter = state.formatter in
       match
-        try
-          Our_type_oracle.find_type_information t.type_oracle ~formatter
-            ~type_expr_and_env ~scrutinee:v
-        with _ -> Obj_unboxed (* CR mshinwell: XXX *)
+        Our_type_oracle.find_type_information t.type_oracle ~formatter
+          ~type_expr_and_env ~scrutinee:v
       with
       | Obj_unboxed -> print_int t ~state v
       | Obj_unboxed_but_should_be_boxed ->

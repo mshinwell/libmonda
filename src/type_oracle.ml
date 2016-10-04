@@ -335,36 +335,39 @@ module Make (D : Debugger.S) = struct
        that try to load .cmt files (e.g. [Env.find_type]). *)
     Config.load_path := Cmt_cache.get_search_path t.cmt_cache;
     let result : Result.t =
-      if V.is_int scrutinee then
-        match type_expr_and_env with
-        | None -> Obj_unboxed
-        | Some (type_expr, env) ->
-          examine_type_expr t ~formatter ~paths_visited_so_far:[] ~type_expr
-            ~env ~scrutinee:(Unboxed scrutinee)
-      else
-        (* CR mshinwell: this is an example of a place we may get a
-           Read_error.  Perhaps V.tag_exn and so on should return options.
-        *)
-        let tag = V.tag_exn scrutinee in
-        match tag with
-        | tag when tag < Obj.lazy_tag ->
-          begin match type_expr_and_env with
-          | None -> Obj_boxed_traversable
+      try
+        if V.is_int scrutinee then
+          match type_expr_and_env with
+          | None -> Obj_unboxed
           | Some (type_expr, env) ->
             examine_type_expr t ~formatter ~paths_visited_so_far:[] ~type_expr
-              ~env ~scrutinee:(Boxed scrutinee)
-          end
-        | tag when tag = Obj.string_tag -> String
-        | tag when tag = Obj.double_tag -> Float
-        | tag when (tag = Obj.closure_tag || tag = Obj.infix_tag) -> Closure
-        | tag when tag = Obj.lazy_tag -> Lazy
-        | tag when tag = Obj.object_tag -> Object
-        | tag when tag = Obj.forward_tag -> Obj_boxed_traversable
-        | tag when tag = Obj.abstract_tag -> Abstract_tag
-        | tag when tag = Obj.custom_tag -> Custom
-        | tag when tag = Obj.double_array_tag -> Float_array
-        | tag when tag < Obj.no_scan_tag -> Obj_boxed_traversable
-        | _tag -> Obj_boxed_not_traversable
+              ~env ~scrutinee:(Unboxed scrutinee)
+        else
+          (* CR mshinwell: this is an example of a place we may get a
+            Read_error.  Perhaps V.tag_exn and so on should return options.
+          *)
+          let tag = V.tag_exn scrutinee in
+          match tag with
+          | tag when tag < Obj.lazy_tag ->
+            begin match type_expr_and_env with
+            | None -> Obj_boxed_traversable
+            | Some (type_expr, env) ->
+              examine_type_expr t ~formatter ~paths_visited_so_far:[] ~type_expr
+                ~env ~scrutinee:(Boxed scrutinee)
+            end
+          | tag when tag = Obj.string_tag -> String
+          | tag when tag = Obj.double_tag -> Float
+          | tag when (tag = Obj.closure_tag || tag = Obj.infix_tag) -> Closure
+          | tag when tag = Obj.lazy_tag -> Lazy
+          | tag when tag = Obj.object_tag -> Object
+          | tag when tag = Obj.forward_tag -> Obj_boxed_traversable
+          | tag when tag = Obj.abstract_tag -> Abstract_tag
+          | tag when tag = Obj.custom_tag -> Custom
+          | tag when tag = Obj.double_array_tag -> Float_array
+          | tag when tag < Obj.no_scan_tag -> Obj_boxed_traversable
+          | _tag -> Obj_boxed_not_traversable
+      (* CR mshinwell: Fix code properly so this handler isn't needed *)
+      with _ -> Obj_unboxed
     in
     if debug then begin
       Printf.printf "find_type_information returning %s\n%!"
