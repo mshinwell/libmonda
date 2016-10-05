@@ -139,7 +139,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
       fprintf(stderr, "monda_val_print -> OCaml printer.  Type '%s'\n", TYPE_NAME(type));
       fflush(stderr); */
 
-      if (caml_callbackN(*callback, 8, args) == Val_false) {
+      if (caml_callbackN(*callback, 9, args) == Val_false) {
         /*
         fprintf(stderr, "monda_val_print -> c_val_print (2)\n");
         fflush(stderr);
