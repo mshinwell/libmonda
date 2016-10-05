@@ -49,6 +49,8 @@
 
 extern value caml_make_vect (value, value);
 /* These are initialized by way of [_initialize_ocaml_language]. */
+/* CR mshinwell: not used any more; remove, and likewise for unused stuff
+   in ocaml-lang.c */
 static int value_printer_max_depth;
 static int value_printer_max_string_length;
 static char* search_path = NULL;
@@ -67,7 +69,8 @@ void
 monda_val_print (struct type* type, const gdb_byte* valaddr,
                  int embedded_offset, CORE_ADDR address,
                  struct ui_file* stream, int recurse, const struct value* val,
-                 const struct value_print_options* options, int depth)
+                 const struct value_print_options* options, int depth,
+                 int max_string_length)
 {
   CAMLparam0();
   CAMLlocal4(v_type, v_stream, v_value, v_search_path);
@@ -131,8 +134,8 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
       Store_field(args, 3, v_stream);
       Store_field(args, 4, v_type);
       Store_field(args, 5, Val_bool(options->summary));
-      Store_field(args, 6, Val_long(value_printer_max_depth));
-      Store_field(args, 7, Val_long(value_printer_max_string_length));
+      Store_field(args, 6, Val_long(depth));
+      Store_field(args, 7, Val_long(max_string_length));
       Store_field(args, 8, v_search_path);
 
       /*
