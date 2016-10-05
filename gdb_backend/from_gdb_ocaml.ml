@@ -44,7 +44,7 @@ let print_value is_synthetic
       (address_on_target : Gdb_debugger_with_traversal.Obj.t)
       (struct_value : Gdb_debugger_with_traversal.Synthetic_ptr.t)
       (stream : Gdb_debugger.stream) dwarf_type summary
-      max_depth cmt_file_search_path =
+      max_depth max_string_length cmt_file_search_path =
   (* When doing e.g. "inf reg", gdb passes "int64_t" as the type to print
      at.  Since we can't yet print out-of-heap values etc, don't try to
      be fancy here. *)
@@ -74,6 +74,7 @@ Format.eprintf "From_gdb_ocaml.print_value OVP starting.  Scrutinee %a.  \
       ~dwarf_type
       ~summary
       ~max_depth
+      ~max_string_length
       ~cmt_file_search_path;
     true
   end

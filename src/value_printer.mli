@@ -42,6 +42,7 @@ module Make (D : Debugger.S) : sig
     -> dwarf_type:string
     -> summary:bool
     -> max_depth:int
+    -> max_string_length:int
     -> cmt_file_search_path:string list
     -> formatter:Format.formatter
     -> unit

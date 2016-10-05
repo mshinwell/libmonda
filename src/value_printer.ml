@@ -47,6 +47,7 @@ module Make (D : Debugger.S) = struct
     summary : bool;
     depth : int;
     max_depth : int;
+    max_string_length : int;
     print_sig : bool;
     formatter : Format.formatter;
     max_array_elements_etc_to_print : int;
@@ -244,10 +245,10 @@ module Make (D : Debugger.S) = struct
   and print_string _t ~state v =
     let formatter = state.formatter in
     let s = V.string v in
-    let max_len = 30 in
-    if String.length s > max_len then
+    if String.length s > state.max_string_length then
       Format.fprintf formatter "%S (* %d chars follow *)"
-        (String.sub s 0 max_len) (String.length s - max_len)
+        (String.sub s 0 state.max_string_length)
+        (String.length s - state.max_string_length)
     else
       Format.fprintf formatter "%S" (V.string v)
 
@@ -619,7 +620,7 @@ module Make (D : Debugger.S) = struct
             identifier
             D.Target_memory.print_addr data_ptr
 
-  let print t ~scrutinee ~dwarf_type ~summary ~max_depth
+  let print t ~scrutinee ~dwarf_type ~summary ~max_depth ~max_string_length
         ~cmt_file_search_path ~formatter =
     if debug then begin
       Format.printf "Value_printer.print %a type %s\n%!"
@@ -644,6 +645,7 @@ module Make (D : Debugger.S) = struct
         summary;
         depth = 0;
         max_depth;
+        max_string_length;
         print_sig = true;
         formatter;
         (* CR mshinwell: pass this next one as an arg to this function *)

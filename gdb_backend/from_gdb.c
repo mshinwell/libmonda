@@ -50,6 +50,7 @@
 extern value caml_make_vect (value, value);
 /* These are initialized by way of [_initialize_ocaml_language]. */
 static int value_printer_max_depth;
+static int value_printer_max_string_length;
 static char* search_path = NULL;
 
 int
@@ -71,7 +72,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   CAMLparam0();
   CAMLlocal4(v_type, v_stream, v_value, v_search_path);
   CAMLlocal1(v_val);
-  CAMLlocalN(args, 8);
+  CAMLlocalN(args, 9);
   static value* callback = NULL;
   int is_synthetic_pointer;
 
@@ -131,7 +132,8 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
       Store_field(args, 4, v_type);
       Store_field(args, 5, Val_bool(options->summary));
       Store_field(args, 6, Val_long(value_printer_max_depth));
-      Store_field(args, 7, v_search_path);
+      Store_field(args, 7, Val_long(value_printer_max_string_length));
+      Store_field(args, 8, v_search_path);
 
       /*
       fprintf(stderr, "monda_val_print -> OCaml printer.  Type '%s'\n", TYPE_NAME(type));
@@ -229,6 +231,12 @@ void
 monda_set_value_printer_max_depth(int new_max_depth)
 {
   value_printer_max_depth = new_max_depth;
+}
+
+void
+monda_set_value_printer_max_string_length(int new_max_string_length)
+{
+  value_printer_max_string_length = new_max_string_length;
 }
 
 void
