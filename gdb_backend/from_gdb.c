@@ -70,12 +70,13 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
                  int embedded_offset, CORE_ADDR address,
                  struct ui_file* stream, int recurse, const struct value* val,
                  const struct value_print_options* options, int depth,
-                 int max_string_length)
+                 int max_string_length, int only_print_short_type,
+                 int only_print_short_value)
 {
   CAMLparam0();
   CAMLlocal4(v_type, v_stream, v_value, v_search_path);
   CAMLlocal1(v_val);
-  CAMLlocalN(args, 9);
+  CAMLlocalN(args, 11);
   static value* callback = NULL;
   int is_synthetic_pointer;
 
@@ -93,7 +94,9 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
       assert (callback != NULL);
     }
 
-    v_value = caml_copy_nativeint(*(intnat*) valaddr);
+    v_value =
+      (valaddr == NULL) ? caml_copy_nativeint(0)
+        : caml_copy_nativeint(*(intnat*) valaddr);
 
     /* Determine whether the value is actually a construction made up in the
        debugger's address space by virtue of interpreting DW_OP_implicit_pointer.
@@ -137,12 +140,14 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
       Store_field(args, 6, Val_long(depth));
       Store_field(args, 7, Val_long(max_string_length));
       Store_field(args, 8, v_search_path);
+      Store_field(args, 9, Val_bool(only_print_short_type));
+      Store_field(args, 10, Val_bool(only_print_short_value));
 
       /*
       fprintf(stderr, "monda_val_print -> OCaml printer.  Type '%s'\n", TYPE_NAME(type));
       fflush(stderr); */
 
-      if (caml_callbackN(*callback, 9, args) == Val_false) {
+      if (caml_callbackN(*callback, 11, args) == Val_false) {
         /*
         fprintf(stderr, "monda_val_print -> c_val_print (2)\n");
         fflush(stderr);

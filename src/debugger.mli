@@ -180,7 +180,9 @@ module type S_base = sig
   type stream
 
   (** A formatter that prints to the debugger terminal for user feedback. *)
-  val formatter : stream -> Format.formatter
+  val formatter
+     : stream
+    -> Format.formatter
 end
 
 module type S = sig

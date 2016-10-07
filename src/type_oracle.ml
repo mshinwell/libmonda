@@ -72,6 +72,7 @@ module Result = struct
     | Object
     | Abstract_tag
     | Custom
+    | Unknown
 
   let to_string = function
     | Obj_boxed_traversable -> "Obj_boxed_traversable"
@@ -97,12 +98,13 @@ module Result = struct
     | Object -> "Object"
     | Abstract_tag -> "Abstract_tag"
     | Custom -> "Custom"
+    | Unknown -> "Unknown"
 end
 
 module Make (D : Debugger.S) = struct
   module V = D.Value
 
-  type maybe_boxed = Unboxed of V.t | Boxed of V.t
+  type maybe_boxed = Unboxed of V.t | Boxed of V.t | Absent
 
   type t = {
     abstraction_breaker : Abstraction_breaker.t;
@@ -133,7 +135,7 @@ module Make (D : Debugger.S) = struct
     if Path.same path Predef.path_array then
       match scrutinee with
       | Unboxed _ -> Some Obj_unboxed_but_should_be_boxed
-      | Boxed _ ->
+      | Absent | Boxed _ ->
         match args with
         | [arg] -> Some (Array (arg, env))
         | _ -> Some Obj_boxed_traversable  (* wrong number of arguments *)
@@ -144,13 +146,14 @@ module Make (D : Debugger.S) = struct
         match scrutinee with  (* wrong number of arguments *)
         | Unboxed _ -> Some Obj_unboxed
         | Boxed _ -> Some Obj_boxed_traversable
+        | Absent -> Some Unknown
     else if Path.same path Predef.path_int then
       match scrutinee with
-      | Unboxed _ -> Some Int
+      | Unboxed _ | Absent -> Some Int
       | Boxed _ -> Some Obj_boxed_traversable  (* should not be boxed *)
     else if Path.same path Predef.path_char then
       match scrutinee with
-      | Unboxed _ -> Some Char
+      | Unboxed _ | Absent -> Some Char
       | Boxed _ -> Some Obj_boxed_traversable  (* should not be boxed *)
     else
       None
@@ -171,6 +174,7 @@ module Make (D : Debugger.S) = struct
           (* Even if the type is abstract, the declaration should still be in
              the environment. *)
           begin match scrutinee with
+          | Absent -> Unknown
           | Unboxed _ -> Obj_unboxed
           | Boxed _ ->
             if debug then
@@ -186,6 +190,7 @@ module Make (D : Debugger.S) = struct
       end
     | Types.Tvariant row_desc ->
       begin match scrutinee with
+      | Absent -> Unknown
       | Boxed _ ->
         (* CR mshinwell: support boxed polymorphic variant constructors *)
         if debug then Printf.printf "examine_type_expr error case 2\n%!";
@@ -210,12 +215,12 @@ module Make (D : Debugger.S) = struct
       end
     | Types.Ttuple component_types ->
       begin match scrutinee with
-      | Boxed _ -> Tuple (component_types, env)
+      | Absent | Boxed _ -> Tuple (component_types, env)
       | Unboxed _ -> Obj_unboxed_but_should_be_boxed
       end
     | Types.Tarrow _ ->
       begin match scrutinee with
-      | Boxed _ -> Closure
+      | Absent | Boxed _ -> Closure
       | Unboxed _ -> Obj_unboxed_but_should_be_boxed
       end
     | Types.Tvar _
@@ -223,7 +228,7 @@ module Make (D : Debugger.S) = struct
     | Types.Tunivar _ | Types.Tpoly _ | Types.Tpackage _ ->
       (* CR mshinwell: more work to do here *)
       begin match scrutinee with
-      | Boxed _ ->
+      | Absent | Boxed _ ->
         let what =
           match (Btype.repr type_expr).Types.desc with
           | Types.Tvar _ -> "Tvar"
@@ -260,6 +265,7 @@ module Make (D : Debugger.S) = struct
         begin match type_decl.Types.type_kind with
         | Types.Type_variant cases ->
           begin match scrutinee with
+          | Absent -> Unknown  (* CR mshinwell: improve *)
           | Boxed _ ->
             (* CR mshinwell: change this when Tvariant case is filled in above *)
             let kind = Vk.Non_polymorphic in
@@ -293,8 +299,9 @@ module Make (D : Debugger.S) = struct
               ~path ~args ~env ~scrutinee
         | Types.Type_record (field_decls, record_repr) ->
           begin match scrutinee with
-          | Boxed _ ->
-            if List.length field_decls = 1
+          | Absent | Boxed _ ->
+            if scrutinee <> Absent
+              && List.length field_decls = 1
               && List.length args = 1
               && Ident.name ((List.hd field_decls).Types.ld_id) = "contents"
               && Path.name path = "Pervasives.ref"
@@ -334,11 +341,12 @@ module Make (D : Debugger.S) = struct
     (* The load path is set here because we may call [Env] functions
        that try to load .cmt files (e.g. [Env.find_type]). *)
     Config.load_path := Cmt_cache.get_search_path t.cmt_cache;
+    let absent = V.is_null scrutinee in
     let result : Result.t =
       try
-        if V.is_int scrutinee then
+        if absent || V.is_int scrutinee then
           match type_expr_and_env with
-          | None -> Obj_unboxed
+          | None -> if absent then Unknown else Obj_unboxed
           | Some (type_expr, env) ->
             examine_type_expr t ~formatter ~paths_visited_so_far:[] ~type_expr
               ~env ~scrutinee:(Unboxed scrutinee)

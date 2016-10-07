@@ -71,6 +71,7 @@ module Result : sig
     | Object
     | Abstract_tag
     | Custom
+    | Unknown
 
   val to_string : t -> string
 end

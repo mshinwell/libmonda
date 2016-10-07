@@ -45,5 +45,7 @@ module Make (D : Debugger.S) : sig
     -> max_string_length:int
     -> cmt_file_search_path:string list
     -> formatter:Format.formatter
+    -> only_print_short_type:bool
+    -> only_print_short_value:bool
     -> unit
 end

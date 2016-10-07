@@ -408,9 +408,12 @@ let find_global_symbol =
 
 type stream = Gdb.Ui_file.t
 
+exception Debugger_formatter_stopped
+
 let formatter (stream : stream) =
   Format.make_formatter (fun str pos len ->
-      Gdb.Ui_file.print_filtered stream (String.sub str pos len))
+      let str = String.sub str pos len in
+      Gdb.Ui_file.print_filtered stream str)
     (fun () -> ())
 
 (* CR-someday mshinwell: Things to add:

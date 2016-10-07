@@ -51,6 +51,8 @@ module Make (D : Debugger.S) = struct
     print_sig : bool;
     formatter : Format.formatter;
     max_array_elements_etc_to_print : int;
+    only_print_short_type : bool;
+    only_print_short_value : bool;
   }
 
   let descend state =
@@ -108,7 +110,6 @@ module Make (D : Debugger.S) = struct
         || state.depth > state.max_depth then begin
       Format.fprintf formatter ".."
     end else begin
-      let formatter = state.formatter in
       match
         Our_type_oracle.find_type_information t.type_oracle ~formatter
           ~type_expr_and_env ~scrutinee:v
@@ -168,6 +169,7 @@ module Make (D : Debugger.S) = struct
       | Object -> Format.fprintf formatter "<object>"
       | Abstract_tag -> Format.fprintf formatter "<block with Abstract_tag>"
       | Custom -> print_custom_block t ~state v
+      | Unknown -> Format.fprintf formatter "unknown"
     end;
     if state.print_sig then begin
       print_type_of_value t ~state ~type_expr_and_env
@@ -620,15 +622,94 @@ module Make (D : Debugger.S) = struct
             identifier
             D.Target_memory.print_addr data_ptr
 
+  let print_short_value t ~state ~type_of_ident:type_expr_and_env v : unit =
+    let formatter = state.formatter in
+    match
+      Our_type_oracle.find_type_information t.type_oracle ~formatter
+        ~type_expr_and_env ~scrutinee:v
+    with
+    | Obj_unboxed -> Format.fprintf formatter "unboxed"
+    | Obj_unboxed_but_should_be_boxed ->
+      if V.int v = Some 0 then Format.fprintf formatter "unboxed/uninited"
+      else Format.fprintf formatter "unboxed (?)"
+    | Obj_boxed_traversable -> Format.fprintf formatter "boxed"
+    | Obj_boxed_not_traversable -> Format.fprintf formatter "boxed-not-trav."
+    | Int ->
+      begin match V.int v with
+      | Some i -> Format.fprintf formatter "%d" i
+      | None -> Format.fprintf formatter "unavailable"
+      end
+    | Char -> print_char t ~state v
+    | Abstract _ -> Format.fprintf formatter "abstract"
+    | Array _ -> Format.fprintf formatter "[| ... |]"
+    | List _ -> Format.fprintf formatter "[...]"
+    | Ref _ -> Format.fprintf formatter "ref ..."
+    | Tuple _ -> Format.fprintf formatter "(...)"
+    | Constant_constructor _ -> Format.fprintf formatter "variant"
+    | Non_constant_constructor _ -> Format.fprintf formatter "variant"
+    | Record _ -> Format.fprintf formatter "{ ... }"
+    | Open -> Format.fprintf formatter "open"
+    | String -> Format.fprintf formatter "string"
+    | Float -> print_float t ~state v
+    | Float_array -> Format.fprintf formatter "float array"
+    | Closure -> Format.fprintf formatter "function"
+    | Lazy -> Format.fprintf formatter "lazy"
+    | Object -> Format.fprintf formatter "object"
+    | Abstract_tag -> Format.fprintf formatter "abstract-tag"
+    | Custom -> Format.fprintf formatter "custom"
+    | Unknown -> Format.fprintf formatter "unknown"
+
+  let print_short_type t ~state ~type_of_ident:type_expr_and_env v : unit =
+    let formatter = state.formatter in
+    match
+      Our_type_oracle.find_type_information t.type_oracle ~formatter
+        ~type_expr_and_env ~scrutinee:v
+    with
+    | Obj_unboxed -> Format.fprintf formatter "unboxed"
+    | Obj_unboxed_but_should_be_boxed ->
+      if V.int v = Some 0 then Format.fprintf formatter "unboxed/uninited"
+      else Format.fprintf formatter "unboxed (?)"
+    | Obj_boxed_traversable -> Format.fprintf formatter "boxed"
+    | Obj_boxed_not_traversable -> Format.fprintf formatter "boxed-not-trav."
+    | Int ->
+      begin match V.int v with
+      | Some _ -> Format.fprintf formatter "int"
+      | None -> Format.fprintf formatter "int (?)"
+      end
+    | Char -> Format.fprintf formatter "char"
+    | Abstract _ -> Format.fprintf formatter "abstract"
+    | Array _ -> Format.fprintf formatter "[| ... |]"
+    | List _ -> Format.fprintf formatter "[...]"
+    | Ref _ -> Format.fprintf formatter "ref ..."
+    | Tuple _ -> Format.fprintf formatter "(...)"
+    | Constant_constructor _ -> Format.fprintf formatter "variant"
+    | Non_constant_constructor _ -> Format.fprintf formatter "variant"
+    | Record _ -> Format.fprintf formatter "{ ... }"
+    | Open -> Format.fprintf formatter "open"
+    | String -> Format.fprintf formatter "\"...\""
+    | Float -> print_float t ~state v
+    | Float_array -> Format.fprintf formatter "[| ... |]"
+    | Closure -> Format.fprintf formatter "function"
+    | Lazy -> Format.fprintf formatter "lazy"
+    | Object -> Format.fprintf formatter "object"
+    | Abstract_tag -> Format.fprintf formatter "abstract-tag"
+    | Custom -> Format.fprintf formatter "custom"
+    | Unknown -> Format.fprintf formatter "unknown"
+
   let print t ~scrutinee ~dwarf_type ~summary ~max_depth ~max_string_length
-        ~cmt_file_search_path ~formatter =
+        ~cmt_file_search_path ~formatter ~only_print_short_type
+        ~only_print_short_value =
     if debug then begin
       Format.printf "Value_printer.print %a type %s\n%!"
         V.print scrutinee dwarf_type
     end;
     (* Example of this null case: [Iphantom_read_var_field] on something
        unavailable. *)
-    if V.is_null scrutinee then begin
+    if V.is_null scrutinee
+      && (not only_print_short_type)
+    then begin
+      (* CR mshinwell: This should still return a type even when not in
+         short-type mode, no? *)
       Format.fprintf formatter "<optimized out>";
       Format.pp_print_flush formatter ()
     end else begin
@@ -650,9 +731,17 @@ module Make (D : Debugger.S) = struct
         formatter;
         (* CR mshinwell: pass this next one as an arg to this function *)
         max_array_elements_etc_to_print = 10;
+        only_print_short_type;
+        only_print_short_value;
       }
       in
-      print_value t ~state ~type_of_ident scrutinee;
+      if only_print_short_type then begin
+        print_short_type t ~state ~type_of_ident scrutinee
+      end else if only_print_short_value then begin
+        print_short_value t ~state ~type_of_ident scrutinee
+      end else begin
+        print_value t ~state ~type_of_ident scrutinee
+      end;
       Format.fprintf formatter "@]";
       Format.pp_print_flush formatter ()
     end
