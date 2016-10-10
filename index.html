@@ -38,6 +38,14 @@
 <h1>
 <a id="installation" class="anchor" href="#installation" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Installation</h1>
 
+<h2>
+<a id="supported-platforms" class="anchor" href="#supported-platforms" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Supported platforms</h2>
+
+<p>libmonda has been tested mostly on x86-64 Linux.  OS X support should be available in the not too distant future.  There is not currently support on the gdb branch of the compiler for non-x86 CPUs, although this will be added during the process of upstream submission.</p>
+
+<h2>
+<a id="from-opam" class="anchor" href="#from-opam" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>From OPAM</h2>
+
 <p>To use libmonda to debug OCaml programs it is necessary to have installed:</p>
 
 <ul>
@@ -47,11 +55,24 @@
 
 <p>Installation of libmonda-gdb will also install a bespoke version of gdb with modifications for debugging OCaml code.  This version of gdb is called using the gdb-ocaml command.  It is not possible to use libmonda with a standard version of gdb.  (The modifications to gdb will be submitted upstream in due course.)</p>
 
+<p>The modifications to the OCaml compiler will be submitted upstream.  This should be done in time for the 4.05 release of the compiler distribution.</p>
+
+<h2>
+<a id="try-it-with-docker" class="anchor" href="#try-it-with-docker" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Try it with Docker</h2>
+
+<p>Thanks to KC there is a Docker file that can be used to get a libmonda environment up and running: <a href="https://gist.github.com/kayceesrk/94cdd19931b324a247bbd1a58ad47b47">https://gist.github.com/kayceesrk/94cdd19931b324a247bbd1a58ad47b47</a></p>
+
 <h1>
 <a id="using-gdb-to-debug-ocaml-code" class="anchor" href="#using-gdb-to-debug-ocaml-code" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Using gdb to debug OCaml code</h1>
 
+<p>Build your code with the -g option to the compiler.  Note that the 4.05.0+monda switch has Flambda enabled.</p>
+
 <p>gdb is invoked in the same way as normal except that gdb-ocaml is written instead of gdb.  A convenient method is using the --args option, like so:
     gdb-ocaml --args ./myprogram --hello world</p>
+
+<p>At present it is advisable to have all .cmi, .cmt and .ml files available at the same path on the filesystem as where they were compiled.  Support will be added for searching in different places in the near future.</p>
+
+<p>(Aside: if attempting to get this to work on OS X, it is necessary to run dsymutil on the executable in question before debugging it.  ocamlopt will be extended to perform this step automatically once it has been established why dsymutil takes a very long time to process the compiler's DWARF output for some programs, such as ocamlopt.opt.)</p>
 
 <h2>
 <a id="standard-gdb-commands" class="anchor" href="#standard-gdb-commands" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Standard gdb commands</h2>
@@ -59,21 +80,41 @@
 <p>The following gdb commands (and many others) should operate as normal:</p>
 
 <ul>
-<li>run - start program's execution</li>
-<li>continue - continue program's execution after a breakpoint, etc.</li>
-<li>step - single-step</li>
-<li>next - single-step, but step over function calls</li>
-<li>finish - run until the current function returns (this won't correctly print the return value)</li>
-<li>break / enable / disable / info break - manage breakpoints</li>
-<li>info locals - show local variables (including free variables captured by closures)</li>
-<li>info args - show arguments of the current function</li>
-<li>backtrace - display current stack backtrace</li>
-<li>up / down - select stack frame for examination</li>
-<li>info threads - show active threads</li>
-<li>thread - switch between threads</li>
-<li>print - examine values</li>
-<li>disassemble - print disassembly (calls to OCaml functions will have proper names)</li>
+<li>
+<strong>run</strong> - start program's execution</li>
+<li>
+<strong>continue</strong> - continue program's execution after a breakpoint, etc.</li>
+<li>
+<strong>step</strong> - single-step</li>
+<li>
+<strong>next</strong> - single-step, but step over function calls</li>
+<li>
+<strong>finish</strong> - run until the current function returns (this won't correctly print the return value)</li>
+<li>
+<strong>break</strong> / <strong>enable</strong> / <strong>disable</strong> / <strong>info break</strong> - manage breakpoints</li>
+<li>
+<strong>info locals</strong> - show local variables (including free variables captured by closures)</li>
+<li>
+<strong>info args</strong> - show arguments of the current function</li>
+<li>
+<strong>backtrace</strong> - display current stack backtrace</li>
+<li>
+<strong>up</strong> / <strong>down</strong> - select stack frame for examination</li>
+<li>
+<strong>info threads</strong> - show active threads</li>
+<li>
+<strong>thread</strong> - switch between threads</li>
+<li>
+<strong>print</strong> - examine values</li>
+<li>
+<strong>disassemble</strong> - print disassembly (calls to OCaml functions will have proper names)</li>
 </ul>
+
+<p>Tab completion may not always behave as expected.  If you have trouble completing a module path (e.g. "break Foo.") then try e.g. "break Foo" instead.</p>
+
+<p>In "info locals" variables are disambiguated by their locations in the source text if their names are not unique.  In the presence of inlining this may still not be sufficient; they will in due course have their names augmented by the inlined-out frames.</p>
+
+<p>In the case of deficiencies in libmonda (or just wanting to debug at a lower level) it is possible to "set language c" even in OCaml code.  This will enable raw manipulation of pointers to values, etc.</p>
 
 <h3>
 <a id="syntax-of-print-commands" class="anchor" href="#syntax-of-print-commands" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Syntax of "print" commands</h3>
@@ -82,16 +123,28 @@
 
 <ul>
 <li>starts with a module path (e.g. "Foo.Bar") which identifies that the remainder of the path is a request for some toplevel value within the given module; or</li>
-<li>starts with the name of a local variable or function argument currently in scope (e.g. "myvar").  (This includes free variables of functions captured by closures.)
-Paths may be continued by either:</li>
+<li>starts with the name of a local variable or function argument currently in scope (e.g. "myvar").  (This includes free variables of functions captured by closures.)</li>
+</ul>
+
+<p>Paths may be continued by either:</p>
+
+<ul>
 <li>giving the name of a record field (e.g. ".myfield"); or</li>
-<li>giving a numeric index (e.g. ".(4)").
-Numeric indexes may be applied to:</li>
+<li>giving a numeric index (e.g. ".(4)").</li>
+</ul>
+
+<p>Numeric indexes may be applied to:</p>
+
+<ul>
 <li>arrays (to retrieve the nth element);</li>
 <li>lists (to retrieve the nth element);</li>
 <li>boxed constructed values (to retrieve the nth argument of the constructor---this works for "traditional" tupled constructors as well as those using inlined records);</li>
-<li>"ref" cells (to retrieve the contents; only the index 0 is valid).
-Some examples of paths might be:</li>
+<li>"ref" cells (to retrieve the contents; only the index 0 is valid).</li>
+</ul>
+
+<p>Some examples of paths might be:</p>
+
+<ul>
 <li>"foo": find the local variable or argument named "foo" in the current function</li>
 <li>"Foo.Bar.myvar.(0).blah": find the toplevel value "myvar" in the module "Foo.Bar", extract the first component and then extract the record field named <code>blah</code>;</li>
 <li>"arg.bar.baz": find the local variable or argument named "arg" and then perform record field accesses "bar" then "baz".</li>
@@ -102,10 +155,22 @@ Some examples of paths might be:</li>
 <h2>
 <a id="ocaml-only-gdb-commands" class="anchor" href="#ocaml-only-gdb-commands" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>OCaml-only gdb commands</h2>
 
+<ul>
+<li>
+<strong>set print ocaml-max-depth </strong> Set the maximum depth which the OCaml value printer will traverse into a structured value.</li>
+<li>
+<strong>set print ocaml-max-string-length </strong> Set the maximum length which the OCaml value printer will print from a string before truncating it.</li>
+</ul>
+
 <h2>
 <a id="spaceemacs-integration" class="anchor" href="#spaceemacs-integration" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>{Space,E}macs integration</h2>
 
 <p>There is somewhat embryonic support for running gdb-ocaml from within Spacemacs and Emacs in the normal gdb mode.  (Type ":gdb" in Spacemacs.)</p>
+
+<h1>
+<a id="hacking" class="anchor" href="#hacking" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Hacking</h1>
+
+<p>There is a lot of work to do on libmonda and gdb integration; offers of assistance are most welcome.  (This part of the world tends to be quite hard work.)</p>
       </section>
     </div>
 
