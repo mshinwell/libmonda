@@ -149,7 +149,8 @@ module Make (D : Debugger.S) = struct
           end
         | Module _ ->
           (* CR-soon mshinwell: fill this in for toplevel accesses, e.g.
-             M.constant *)
+             M.constant
+             mshinwell: not clear this is needed now---check *)
           None
         | Record { field_name; next; } ->
           begin match oracle_result with
@@ -189,18 +190,7 @@ module Make (D : Debugger.S) = struct
           | _ -> None
           end
         | Indexed { index; next; } ->
-          begin match oracle_result with
-          | Array (element_type, env) ->
-            if index >= D.Obj.size_exn v then
-              None
-            else
-              let address_of_element = D.Obj.address_of_field v index in
-              let element = D.Obj.field_exn v index in
-              find_component ~path:next ~type_expr:element_type ~env
-                ~previous_was_mutable:false
-                ~address_of_v:(Some address_of_element)
-                element
-          | Tuple (element_types, env) ->
+          let tuple_like ~element_types ~env =
             let element_types = Array.of_list element_types in
             if index >= D.Obj.size_exn v
               || index >= Array.length element_types
@@ -214,6 +204,74 @@ module Make (D : Debugger.S) = struct
                 ~previous_was_mutable:false
                 ~address_of_v:(Some address_of_element)
                 element
+          in
+          begin match oracle_result with
+          | Array (element_type, env) ->
+            if index >= D.Obj.size_exn v then
+              None
+            else
+              let address_of_element = D.Obj.address_of_field v index in
+              let element = D.Obj.field_exn v index in
+              find_component ~path:next ~type_expr:element_type ~env
+                ~previous_was_mutable:false
+                ~address_of_v:(Some address_of_element)
+                element
+          | Tuple (element_types, env) -> tuple_like ~element_types ~env
+          | Ref (element_type, env) ->
+            tuple_like ~element_types:[element_type] ~env
+          | List (element_type, env) ->
+            assert (index >= 0);
+            if (not (D.Obj.is_block v))
+              || (D.Obj.size_exn v <> 2)
+              || (D.Obj.tag_exn v <> 0)
+            then
+              None
+            else if index = 0 then
+              let address_of_element = D.Obj.address_of_field v 0 in
+              let element = D.Obj.field_exn v 0 in
+              find_component ~path:next ~type_expr:element_type ~env
+                ~previous_was_mutable:false
+                ~address_of_v:(Some address_of_element)
+                element
+            else
+              let address_of_tail = D.Obj.address_of_field v 1 in
+              let tail = D.Obj.field_exn v 1 in
+              let path = Indexed { index = index - 1; next; } in
+              find_component ~path ~type_expr ~env
+                ~previous_was_mutable:false
+                ~address_of_v:(Some address_of_tail)
+                tail
+          | Non_constant_constructor (_, ctor_decls, _, _, env, _) ->
+            assert (index >= 0);
+            if not (D.Obj.is_block v) then
+              None
+            else
+              let tag = D.Obj.tag_exn v in
+              if tag < 0 || tag >= List.length ctor_decls then
+                None
+              else
+                let ctor_decl = List.nth ctor_decls tag in
+                let ctor_arg_types =
+                  match ctor_decl.cd_args with
+                  | Cstr_tuple types -> Array.of_list types
+                  | Cstr_record lds ->
+                    Array.of_list (
+                      List.map (fun (ld : Types.label_declaration) ->
+                          ld.ld_type)
+                        lds)
+                in
+                if index >= D.Obj.size_exn v
+                  || index >= Array.length ctor_arg_types
+                then
+                  None
+                else
+                  let address_of_element = D.Obj.address_of_field v index in
+                  let element = D.Obj.field_exn v index in
+                  let element_type = ctor_arg_types.(index) in
+                  find_component ~path:next ~type_expr:element_type ~env
+                    ~previous_was_mutable:false
+                    ~address_of_v:(Some address_of_element)
+                    element
           | _ -> None
           end
       in

@@ -132,17 +132,17 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
       v_val = caml_copy_nativeint((intnat) val);
 
       /* N.B. [Store_field] must not be used on [args]! */
-      Field (args, 0) = Val_bool(is_synthetic_pointer);
-      Field (args, 1) = v_value;
-      Field (args, 2) = v_val;
-      Field (args, 3) = v_stream;
-      Field (args, 4) = v_type;
-      Field (args, 5) = Val_bool(options->summary);
-      Field (args, 6) = Val_long(depth);
-      Field (args, 7) = Val_long(max_string_length);
-      Field (args, 8) = v_search_path;
-      Field (args, 9) = Val_bool(only_print_short_type);
-      Field (args, 10) = Val_bool(only_print_short_value);
+      args[0] = Val_bool(is_synthetic_pointer);
+      args[1] = v_value;
+      args[2] = v_val;
+      args[3] = v_stream;
+      args[4] = v_type;
+      args[5] = Val_bool(options->summary);
+      args[6] = Val_long(depth);
+      args[7] = Val_long(max_string_length);
+      args[8] = v_search_path;
+      args[9] = Val_bool(only_print_short_type);
+      args[10] = Val_bool(only_print_short_value);
 
       /*
       fprintf(stderr, "monda_val_print -> OCaml printer.  Type '%s'\n", TYPE_NAME(type));

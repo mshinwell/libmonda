@@ -35,7 +35,8 @@
    be a halfway house between standard OCaml types and the very limited
    types available by looking at the heap.
    This would require pushing types through the backend along with [Ident.t]
-   values, most likely; this could also be used for optimisation. *)
+   binding occurrences, most likely; this could also be used for optimisation.
+*)
 
 module Variant_kind : sig
   type t

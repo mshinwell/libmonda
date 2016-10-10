@@ -642,7 +642,8 @@ module Make (D : Debugger.S) = struct
     | Char -> print_char t ~state v
     | Abstract _ -> Format.fprintf formatter "abstract"
     | Array _ -> Format.fprintf formatter "[| ... |]"
-    | List _ when V.is_block v -> Format.fprintf formatter "[]"
+    | List _ when not (V.is_block v) && not (V.is_null v) ->
+      Format.fprintf formatter "[]"
     | List _ -> Format.fprintf formatter "[...]"
     | Ref _ -> Format.fprintf formatter "ref ..."
     | Tuple _ -> Format.fprintf formatter "(...)"
