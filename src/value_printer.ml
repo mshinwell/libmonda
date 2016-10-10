@@ -642,6 +642,7 @@ module Make (D : Debugger.S) = struct
     | Char -> print_char t ~state v
     | Abstract _ -> Format.fprintf formatter "abstract"
     | Array _ -> Format.fprintf formatter "[| ... |]"
+    | List _ when V.is_block v -> Format.fprintf formatter "[]"
     | List _ -> Format.fprintf formatter "[...]"
     | Ref _ -> Format.fprintf formatter "ref ..."
     | Tuple _ -> Format.fprintf formatter "(...)"
@@ -649,9 +650,10 @@ module Make (D : Debugger.S) = struct
     | Non_constant_constructor _ -> Format.fprintf formatter "variant"
     | Record _ -> Format.fprintf formatter "{ ... }"
     | Open -> Format.fprintf formatter "open"
-    | String -> Format.fprintf formatter "string"
+    | String ->
+      print_string t ~state:{ state with max_string_length = 10; } v
     | Float -> print_float t ~state v
-    | Float_array -> Format.fprintf formatter "float array"
+    | Float_array -> Format.fprintf formatter "[| ... |]"
     | Closure -> Format.fprintf formatter "function"
     | Lazy -> Format.fprintf formatter "lazy"
     | Object -> Format.fprintf formatter "object"
@@ -678,17 +680,17 @@ module Make (D : Debugger.S) = struct
       end
     | Char -> Format.fprintf formatter "char"
     | Abstract _ -> Format.fprintf formatter "abstract"
-    | Array _ -> Format.fprintf formatter "[| ... |]"
-    | List _ -> Format.fprintf formatter "[...]"
-    | Ref _ -> Format.fprintf formatter "ref ..."
-    | Tuple _ -> Format.fprintf formatter "(...)"
+    | Array _ -> Format.fprintf formatter "array"
+    | List _ -> Format.fprintf formatter "list"
+    | Ref _ -> Format.fprintf formatter "ref"
+    | Tuple _ -> Format.fprintf formatter "tuple"
     | Constant_constructor _ -> Format.fprintf formatter "variant"
     | Non_constant_constructor _ -> Format.fprintf formatter "variant"
-    | Record _ -> Format.fprintf formatter "{ ... }"
+    | Record _ -> Format.fprintf formatter "record"
     | Open -> Format.fprintf formatter "open"
-    | String -> Format.fprintf formatter "\"...\""
-    | Float -> print_float t ~state v
-    | Float_array -> Format.fprintf formatter "[| ... |]"
+    | String -> Format.fprintf formatter "string"
+    | Float -> Format.fprintf formatter "float"
+    | Float_array -> Format.fprintf formatter "float array"
     | Closure -> Format.fprintf formatter "function"
     | Lazy -> Format.fprintf formatter "lazy"
     | Object -> Format.fprintf formatter "object"

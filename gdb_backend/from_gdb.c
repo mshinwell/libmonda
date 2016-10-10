@@ -177,8 +177,7 @@ monda_parse (const char* expr, int length)
     assert(cb != NULL);
   }
 
-  v_expr = caml_alloc_string(length);
-  memcpy(String_val(v_expr), expr, length);
+  v_expr = caml_copy_string(expr);
 
   if (caml_callback(*cb, v_expr) == Val_true) {
     /* Failure */
@@ -192,7 +191,7 @@ CORE_ADDR
 monda_evaluate (const char* expr, int length, char** type_name_out)
 {
   CAMLparam0();
-  CAMLlocal2(v_stream, v_expr);
+  CAMLlocal3(v_stream, v_expr, v_search_path);
   value v_result;
   static value* cb = NULL;
   int failed = 0;
@@ -209,15 +208,14 @@ printf("monda_evaluate '%s'\n", expr);fflush(stdout);
     assert(cb != NULL);
   }
 
-  v_expr = caml_alloc_string(length);
-  memcpy(String_val(v_expr), expr, length);
+  v_expr = caml_copy_string(expr);
 
   /* We assume [stderr_fileopen] doesn't raise any exceptions. */
   v_stream = caml_copy_int64((uint64_t) stderr_fileopen());
 
-  v_result = caml_callback3(*cb, v_expr,
-    caml_copy_string(search_path ? search_path : ""),
-    v_stream);
+  v_search_path = caml_copy_string(search_path ? search_path : "");
+
+  v_result = caml_callback3(*cb, v_expr, v_search_path, v_stream);
 
   if (v_result == Val_unit /* Failure */) {
     CAMLreturn((CORE_ADDR) 0);  /* CR mshinwell: suboptimal? */
@@ -277,7 +275,7 @@ monda_demangle (char* mangled, int options)
 {
   CAMLparam0();
   CAMLlocal2(caml_res, caml_mangled);
-  static value*cb = NULL;
+  static value* cb = NULL;
   char* res = NULL;
 
   if (cb == NULL) {
