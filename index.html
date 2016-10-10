@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/github-dark.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/print.css" media="print">
+
+    <title>libmonda by mshinwell</title>
+  </head>
+
+  <body>
+
+    <header>
+      <div class="container">
+        <h1>libmonda</h1>
+        <h2>Make OCaml native debugging awesome</h2>
+
+        <section id="downloads">
+          <a href="https://github.com/mshinwell/libmonda/zipball/master" class="btn">Download as .zip</a>
+          <a href="https://github.com/mshinwell/libmonda/tarball/master" class="btn">Download as .tar.gz</a>
+          <a href="https://github.com/mshinwell/libmonda" class="btn btn-github"><span class="icon"></span>View on GitHub</a>
+        </section>
+      </div>
+    </header>
+
+    <div class="container">
+      <section id="main_content">
+        <h3>
+<a id="what-is-libmonda" class="anchor" href="#what-is-libmonda" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>What is libmonda?</h3>
+
+<p><code>libmonda</code> is a library that provides improved support for the OCaml language in platform debuggers.  The majority of the library is designed to be independent of the particular debugger in use.  Currently the only supported debugger is gdb but it is expected that lldb support will be implemented in due course.</p>
+
+<h3>
+<a id="installation" class="anchor" href="#installation" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Installation</h3>
+
+<p>To use libmonda to debug OCaml programs it is necessary to have installed:</p>
+
+<ul>
+<li>the OPAM switch <code>4.05.0+monda</code> (this currently requires adding <code>github.com/mshinwell/opam-repo-dev</code> as an OPAM remote);</li>
+<li>the <code>libmonda-gdb</code> package (likewise).</li>
+</ul>
+
+<p>Installation of <code>libmonda-gdb</code> will also install a bespoke version of gdb with modifications for debugging OCaml code.  This version of gdb is called using the <code>gdb-ocaml</code> command.  It is not possible to use <code>libmonda</code> with a standard version of gdb.  (The modifications to gdb will be submitted upstream in due course.)</p>
+
+<h3>
+<a id="using-gdb-to-debug-ocaml-code" class="anchor" href="#using-gdb-to-debug-ocaml-code" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Using gdb to debug OCaml code</h3>
+
+<p>gdb is invoked in the same way as normal except that <code>gdb-ocaml</code> is written instead of <code>gdb</code>.  A convenient method is using the <code>--args</code> option, like so:
+    gdb-ocaml --args ./myprogram --hello world</p>
+
+<h2>
+<a id="standard-gdb-commands" class="anchor" href="#standard-gdb-commands" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Standard gdb commands</h2>
+
+<h1>
+<a id="syntax-of-print-commands" class="anchor" href="#syntax-of-print-commands" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Syntax of "print" commands</h1>
+
+<p>The <code>print</code> command understands a small language of <em>paths</em> which enables the navigation of structured OCaml values.  A path either:</p>
+
+<ul>
+<li>starts with a module path (e.g. <code>Foo.Bar</code>) which identifies that the remainder of the path is a request for some toplevel value within the given module; or</li>
+<li>starts with the name of a local variable or function argument currently in scope (e.g. "myvar").  (This includes free variables of functions captured by closures.)
+Paths may be continued by either:</li>
+<li>giving the name of a record field (e.g. ".myfield"); or</li>
+<li>giving a numeric index (e.g. ".(4)").
+Numeric indexes may be applied to:</li>
+<li>arrays (to retrieve the nth element);</li>
+<li>lists (to retrieve the nth element);</li>
+<li>boxed constructed values (to retrieve the nth argument of the constructor---this works for "traditional" tupled constructors as well as those using inlined records);</li>
+<li>
+<code>ref</code> cells (to retrieve the contents; only the index <code>0</code> is valid).
+Some examples of paths might be:</li>
+<li>
+<code>Foo.Bar.myvar.(0).blah</code>: find the toplevel value <code>myvar</code> in the module <code>Foo.Bar</code>, extract the first component and then extract the record field named <code>blah</code>;</li>
+<li>
+<code>arg.bar.baz</code>: find the local variable or argument named <code>arg</code> and then perform record field accesses <code>bar</code> then <code>baz</code>.</li>
+</ul>
+
+<p>Error reporting in the debugger is currently rather primitive.  A message such as <code>$2 = 0</code> indicates that an error occurred when locating a value or traversing the given path.  Check that the name is correct and the path valid.  It can be helpful to use <code>info args</code> or <code>info locals</code> for this.</p>
+
+<h2>
+<a id="ocaml-only-gdb-commands" class="anchor" href="#ocaml-only-gdb-commands" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>OCaml-only gdb commands</h2>
+      </section>
+    </div>
+
+    
+  </body>
+</html>
