@@ -131,17 +131,18 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
       v_search_path = caml_copy_string(search_path ? search_path : "");
       v_val = caml_copy_nativeint((intnat) val);
 
-      Store_field(args, 0, Val_bool(is_synthetic_pointer));
-      Store_field(args, 1, v_value);
-      Store_field(args, 2, v_val);
-      Store_field(args, 3, v_stream);
-      Store_field(args, 4, v_type);
-      Store_field(args, 5, Val_bool(options->summary));
-      Store_field(args, 6, Val_long(depth));
-      Store_field(args, 7, Val_long(max_string_length));
-      Store_field(args, 8, v_search_path);
-      Store_field(args, 9, Val_bool(only_print_short_type));
-      Store_field(args, 10, Val_bool(only_print_short_value));
+      /* N.B. [Store_field] must not be used on [args]! */
+      Field (args, 0) = Val_bool(is_synthetic_pointer);
+      Field (args, 1) = v_value;
+      Field (args, 2) = v_val;
+      Field (args, 3) = v_stream;
+      Field (args, 4) = v_type;
+      Field (args, 5) = Val_bool(options->summary);
+      Field (args, 6) = Val_long(depth);
+      Field (args, 7) = Val_long(max_string_length);
+      Field (args, 8) = v_search_path;
+      Field (args, 9) = Val_bool(only_print_short_type);
+      Field (args, 10) = Val_bool(only_print_short_value);
 
       /*
       fprintf(stderr, "monda_val_print -> OCaml printer.  Type '%s'\n", TYPE_NAME(type));
