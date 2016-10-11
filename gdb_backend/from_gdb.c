@@ -116,6 +116,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
       */
 
     /* CR mshinwell: improve this test */
+#if 0
     if ((TYPE_NAME(type) == NULL && !is_synthetic_pointer)
         || (is_synthetic_pointer && TYPE_CODE(type) != TYPE_CODE_PTR)) {
       /*
@@ -125,7 +126,9 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
       c_val_print(type, valaddr, embedded_offset, address, stream, recurse,
                   val, options, depth);
     }
-    else {
+    else
+#endif
+      {
       v_type = caml_copy_string(TYPE_NAME(type) == NULL ? "" : TYPE_NAME(type));
       v_stream = caml_copy_int64((uint64_t) stream);
       v_search_path = caml_copy_string(search_path ? search_path : "");
@@ -143,13 +146,13 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
       args[8] = v_search_path;
       args[9] = Val_bool(only_print_short_type);
       args[10] = Val_bool(only_print_short_value);
-
-      /*
+/*
       fprintf(stderr, "monda_val_print -> OCaml printer.  Type '%s'\n", TYPE_NAME(type));
-      fflush(stderr); */
+      fflush(stderr);
+      */
 
       if (caml_callbackN(*callback, 11, args) == Val_false) {
-        /*
+/*
         fprintf(stderr, "monda_val_print -> c_val_print (2)\n");
         fflush(stderr);
         */
@@ -159,6 +162,8 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
     }
   }
   CATCH (exn, RETURN_MASK_ALL) {
+    fprintf(stderr, "monda_val_print: exception: %s\n",
+            exn.message ? exn.message : "<no message>");
     CAMLdrop;
     throw_exception(exn);
   }
