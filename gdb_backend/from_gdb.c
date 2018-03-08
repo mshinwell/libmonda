@@ -42,6 +42,8 @@
 #include "stack.h"
 #include "symtab.h"
 #include "valprint.h"
+#include "value.h"
+#include "c-lang.h"
 
 #include <assert.h>
 #include <string.h>
@@ -124,7 +126,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
       fflush(stderr);
       */
       c_val_print(type, valaddr, embedded_offset, address, stream, recurse,
-                  val, options, depth);
+                  val, options/*, depth*/);
     }
     else
 #endif
@@ -157,7 +159,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
         fflush(stderr);
         */
         c_val_print(type, valaddr, embedded_offset, address, stream, recurse,
-          val, options, depth);
+          val, options/*, depth*/);
       }
     }
   }
