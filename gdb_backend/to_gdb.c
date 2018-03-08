@@ -35,6 +35,8 @@
 #include "defs.h"
 #include "symtab.h"
 #include "value.h"
+#include "stack.h"
+#include "target/target.h"
 
 /* Remember: No gdb exceptions may escape from the functions called from OCaml
    in this file.  (See from_gdb.c for an explanation.)
