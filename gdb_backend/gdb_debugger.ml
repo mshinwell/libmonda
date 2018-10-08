@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -43,7 +43,7 @@ external caml_copy_double
    : (float [@unboxed])
   -> float
   = "_native_only" "caml_copy_double"
-external caml_copy_string : addr:int -> string = "caml_copy_string"
+external caml_copy_string : addr:int -> bytes = "caml_copy_string"
 
 type out_of_heap_buffer = private int
 
@@ -59,7 +59,7 @@ external caml_stat_free
 
 external caml_copy_string_from_out_of_heap_buffer
    : out_of_heap_buffer
-  -> string
+  -> bytes
   = "caml_copy_string"
 
 let dereference_out_of_heap_buffer (buf : out_of_heap_buffer)
@@ -152,19 +152,19 @@ module Gdb_indirect = struct
     = "monda_find_global_symbol"
 end
 
-let copy_int32 (buf : string) =
+let copy_int32 (buf : Bytes.t) =
   caml_copy_int32 (Obj.field (Obj.repr buf) 0)
 
-let copy_int64 (buf : string) =
+let copy_int64 (buf : Bytes.t) =
   caml_copy_int64 (Obj.field (Obj.repr buf) 0)
 
-let copy_nativeint (buf : string) =
+let copy_nativeint (buf : Bytes.t) =
   caml_copy_nativeint (Obj.field (Obj.repr buf) 0)
 
 let copy_nativeint_from_out_of_heap_buffer (buf : out_of_heap_buffer) =
   caml_copy_nativeint (Obj.field (Obj.repr buf) 0)
 
-let copy_float (buf : string) =
+let copy_float (buf : Bytes.t) =
   (* CR-soon mshinwell: see if this can be done with float_of_bits etc *)
   caml_copy_double ((Obj.magic buf) : float)
 
@@ -263,10 +263,10 @@ module Obj = struct
     while not !finished do
       let buf = Bytes.create 1 in
       Target_memory.read_exn !ptr buf 1;
-      if String.get buf 0 = '\000' then
+      if Bytes.get buf 0 = '\000' then
         finished := true
       else begin
-        result := !result ^ buf;
+        result := !result ^ (Bytes.to_string buf);
         ptr := Nativeint.add !ptr (Nativeint.of_int 1)
       end
     done;
@@ -280,8 +280,8 @@ module Obj = struct
     let size = size_exn x * Arch.size_addr in
     let buf = Bytes.create size in
     Target_memory.read_exn x buf size;
-    let size = size - 1 - int_of_char buf.[size - 1] in
-    String.sub buf 0 size
+    let size = size - 1 - int_of_char (Bytes.get buf (size - 1)) in
+    String.sub (Bytes.to_string buf) 0 size
 
   let raw t = t
 
@@ -389,7 +389,9 @@ let symbol_at_pc pc =
         (dereference_out_of_heap_buffer function_name))
   in
   caml_stat_free function_name;
-  result
+  match result with
+  | None -> None
+  | Some result -> Some (Bytes.to_string result)
 
 let filename_and_line_number_of_pc addr
       ~use_previous_line_number_if_on_boundary =

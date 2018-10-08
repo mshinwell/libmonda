@@ -32,8 +32,8 @@
 
 #GDB_ROOT=$(PREFIX)/libexec/gdb-ocaml.7.11/src
 #OCAML_ROOT=$(PREFIX)
-GDB_ROOT=/mnt/local/sda1/mshinwell/mshinwell-gdb
-OCAML_ROOT=/mnt/local/sda1/mshinwell/mshinwell-ocaml2-install
+GDB_ROOT=/usr/local/home/mshinwell/mshinwell-gdb
+OCAML_ROOT=/usr/local/home/mshinwell/ocaml-gdb-pic-install
 
 OCAMLOPT=$(OCAML_ROOT)/bin/ocamlopt -verbose -I +compiler-libs -I ./src \
   -g -fPIC -I ./gdb_backend

@@ -107,7 +107,7 @@ let rec find_module_binding t ~dir_prefix ~path ~is_toplevel ~env =
     | `Not_found -> `Not_found
     | `Found_type_decl _ -> assert false
     | `Found_pack ident ->
-      let path = Path.Pident (Ident.create component) in
+      let path = Path.Pident (Ident.create_local component) in
       (* [`Found_pack] means that we found a packed module.  In this case, we
          look for the .cmt of the next module down the path in a subdirectory
          corresponding to the packed module's name. *)

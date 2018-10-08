@@ -4,7 +4,7 @@
 (*                                                                        *)
 (*                  Mark Shinwell, Jane Street Europe                     *)
 (*                                                                        *)
-(* Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
+(* Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
 (*                                                                        *)
 (* Permission is hereby granted, free of charge, to any person obtaining  *)
 (* a copy of this software and associated documentation files             *)
@@ -27,6 +27,8 @@
 (*                                                                        *)
 (**************************************************************************)
 
+[@@@ocaml.warning "+a-4-30-40-41-42"]
+
 let debug = Monda_debug.debug
 
 let distinguished_var_name = "camlaverydistinguishedvariableindeed"
@@ -47,6 +49,8 @@ module String = struct
   module Map = Map.Make (String)
 end
 
+module T = Typedtree
+
 type t = {
   cmi_infos : Cmi_format.cmi_infos option;
   cmt_infos : Cmt_format.cmt_infos option;
@@ -58,62 +62,63 @@ type t = {
   idents_to_types : (Types.type_expr * Env.t) String.Map.t;
 }
 
-let rec process_pattern ~pat ~idents_to_types =
-  match pat.Typedtree.pat_desc with
-  | Typedtree.Tpat_var (ident, _loc) ->
+let rec process_pattern ~(pat : T.pattern) ~idents_to_types =
+  match pat.pat_desc with
+  | Tpat_var (ident, _loc) ->
     if debug then begin
       Printf.printf "process_pattern: Tpat_var %s\n%!" (Ident.unique_name ident)
     end;
     String.Map.add (Ident.unique_name ident)
-      (pat.Typedtree.pat_type, pat.Typedtree.pat_env)
+      (pat.pat_type, pat.pat_env)
       idents_to_types
-  | Typedtree.Tpat_alias (pat, ident, _loc) ->
+  | Tpat_alias (pat, ident, _loc) ->
     let idents_to_types =
       String.Map.add (Ident.unique_name ident)
-        (pat.Typedtree.pat_type, pat.Typedtree.pat_env)
+        (pat.pat_type, pat.pat_env)
         idents_to_types
     in
     process_pattern ~pat ~idents_to_types
-  | Typedtree.Tpat_tuple pats
-  | Typedtree.Tpat_construct (_, _, pats)
-  | Typedtree.Tpat_array pats ->
+  | Tpat_tuple pats
+  | Tpat_construct (_, _, pats)
+  | Tpat_array pats ->
     List.fold_left pats
       ~init:idents_to_types
       ~f:(fun idents_to_types pat ->
             process_pattern ~pat ~idents_to_types)
-  | Typedtree.Tpat_variant (_label, pat_opt, _row_desc) ->
+  | Tpat_variant (_label, pat_opt, _row_desc) ->
     begin match pat_opt with
     | None -> idents_to_types
     | Some pat -> process_pattern ~pat ~idents_to_types
     end
-  | Typedtree.Tpat_record (loc_desc_pat_list, _closed) ->
+  | Tpat_record (loc_desc_pat_list, _closed) ->
     List.fold_left loc_desc_pat_list
       ~init:idents_to_types
       ~f:(fun idents_to_types (_loc, _desc, pat) ->
             process_pattern ~pat ~idents_to_types)
-  | Typedtree.Tpat_or (pat1, pat2, _row_desc) ->
+  | Tpat_or (pat1, pat2, _row_desc) ->
     process_pattern ~pat:pat1
       ~idents_to_types:(process_pattern ~pat:pat2 ~idents_to_types)
-  | Typedtree.Tpat_lazy pat ->
+  | Tpat_lazy pat
+  | Tpat_exception pat ->
     process_pattern ~pat ~idents_to_types
-  | Typedtree.Tpat_any
-  | Typedtree.Tpat_constant _ -> idents_to_types
+  | Tpat_any
+  | Tpat_constant _ -> idents_to_types
 
-and process_expression ~exp ((idents_to_types, app_points) as init) =
-  let open Typedtree in
+and process_expression ~(exp : T.expression)
+      ((idents_to_types, app_points) as init) =
   match exp.exp_desc with
   | Texp_let (_rec, value_binding, exp) ->
     let acc = process_value_binding ~value_binding init in
     process_expression ~exp acc
-  | Texp_function (_label, ident, cases, _partial) ->
+  | Texp_function { arg_label = _; param = ident; cases; partial = _; } ->
     let idents_to_types =
       (* The types of all the cases must be the same, so just use the first
          case. *)
       match cases with
       | case::_ ->
         String.Map.add (Ident.unique_name ident)
-          (case.Typedtree.c_lhs.Typedtree.pat_type,
-            case.Typedtree.c_lhs.Typedtree.pat_env)
+          (case.T.c_lhs.T.pat_type,
+            case.T.c_lhs.T.pat_env)
           idents_to_types
       | _ -> idents_to_types
     in
@@ -139,9 +144,9 @@ and process_expression ~exp ((idents_to_types, app_points) as init) =
       | None -> acc
       | Some exp -> process_expression ~exp acc
     )
-  | Texp_match (exp, cases1, cases2, _) ->
+  | Texp_match (exp, cases, _) ->
     let acc = process_expression ~exp init in
-    process_cases ~cases:cases2 (process_cases ~cases:cases1 acc)
+    process_cases ~cases acc
   | Texp_try (exp, cases) ->
     let acc = process_expression ~exp init in
     process_cases ~cases acc
@@ -158,7 +163,9 @@ and process_expression ~exp ((idents_to_types, app_points) as init) =
       | None -> init
       | Some exp -> process_expression ~exp init
     in
-    Array.fold_left (fun acc (_, record_label_definition) ->
+    Array.fold_left
+      (fun acc
+           (_, (record_label_definition : T.record_label_definition)) ->
         match record_label_definition with
         | Kept _ -> acc
         | Overridden (_, exp) -> process_expression ~exp acc)
@@ -197,7 +204,7 @@ and process_expression ~exp ((idents_to_types, app_points) as init) =
     | None -> acc
     | Some exp -> process_expression ~exp acc
     end
-  | Texp_letmodule (ident, str_loc, mod_expr, exp) ->
+  | Texp_letmodule (_ident, _str_loc, _mod_expr, exp) ->
     (* TODO: handle [mod_expr] *)
 (*
     let idents_to_types =
@@ -222,22 +229,22 @@ and process_expression ~exp ((idents_to_types, app_points) as init) =
 
 and process_cases ~cases init =
   List.fold_left cases ~init ~f:(fun acc case ->
-    let pat = case.Typedtree.c_lhs in
-    let exp = case.Typedtree.c_rhs in
+    let pat = case.T.c_lhs in
+    let exp = case.T.c_rhs in
     let idents_to_types, app_points = process_expression ~exp acc in
     process_pattern ~pat ~idents_to_types, app_points
   )
 
 and process_value_binding ~value_binding init =
   List.fold_left value_binding ~init ~f:(fun acc value_binding ->
-    let pat = value_binding.Typedtree.vb_pat in
-    let exp = value_binding.Typedtree.vb_expr in
+    let pat = value_binding.T.vb_pat in
+    let exp = value_binding.T.vb_expr in
     let idents_to_types, app_points = process_expression ~exp acc in
     process_pattern ~pat ~idents_to_types, app_points
   )
 
-let rec process_module_expr ~mod_expr ((idents_to_types, app_points) as maps) =
-  let open Typedtree in
+let rec process_module_expr ~(mod_expr : T.module_expr)
+      ((idents_to_types, app_points) as maps) =
   match mod_expr.mod_desc with
   | Tmod_ident _ -> maps
   | Tmod_structure structure ->
@@ -250,52 +257,52 @@ let rec process_module_expr ~mod_expr ((idents_to_types, app_points) as maps) =
     process_module_expr ~mod_expr:me2 maps
   | Tmod_unpack (_expr, _) -> (* TODO *) maps
 
-and process_implementation ~structure ~idents_to_types ~app_points =
-  List.fold_left structure.Typedtree.str_items
+and process_implementation ~(structure : T.structure)
+      ~idents_to_types ~app_points =
+  List.fold_left structure.str_items
     ~init:(idents_to_types, app_points)
-    ~f:(fun maps str_item ->
-          match str_item.Typedtree.str_desc with
-          | Typedtree.Tstr_value (_rec, value_binding) ->
+    ~f:(fun maps (str_item : T.structure_item) ->
+          match str_item.str_desc with
+          | Tstr_value (_rec, value_binding) ->
             process_value_binding ~value_binding maps
-          | Typedtree.Tstr_eval (exp, _) ->
+          | Tstr_eval (exp, _) ->
             process_expression ~exp maps
-          | Typedtree.Tstr_module module_binding ->
-            process_module_expr ~mod_expr:module_binding.Typedtree.mb_expr maps
-          | Typedtree.Tstr_recmodule lst ->
+          | Tstr_module module_binding ->
+            process_module_expr ~mod_expr:module_binding.mb_expr maps
+          | Tstr_recmodule lst ->
             List.fold_left lst ~init:(idents_to_types, app_points) ~f:(
-              fun maps module_binding ->
-                process_module_expr ~mod_expr:module_binding.Typedtree.mb_expr maps
+              fun maps (module_binding : T.module_binding) ->
+                process_module_expr ~mod_expr:module_binding.mb_expr maps
             )
-          | Typedtree.Tstr_primitive _
-          | Typedtree.Tstr_type _
-          | Typedtree.Tstr_exception _
-          | Typedtree.Tstr_modtype _
-          | Typedtree.Tstr_open _
-          | Typedtree.Tstr_class _
-          | Typedtree.Tstr_class_type _
-          | Typedtree.Tstr_include _
-          | Typedtree.Tstr_attribute _
-          | Typedtree.Tstr_typext _ -> maps)
+          | Tstr_primitive _
+          | Tstr_type _
+          | Tstr_exception _
+          | Tstr_modtype _
+          | Tstr_open _
+          | Tstr_class _
+          | Tstr_class_type _
+          | Tstr_include _
+          | Tstr_attribute _
+          | Tstr_typext _ -> maps)
 
-let create_idents_to_types_map ~cmt_infos =
-  let cmt_annots = cmt_infos.Cmt_format.cmt_annots in
+let create_idents_to_types_map ~(cmt_infos : Cmt_format.cmt_infos) =
+  let cmt_annots = cmt_infos.cmt_annots in
   match cmt_annots with
-  | Cmt_format.Packed _
-  | Cmt_format.Interface _
+  | Packed _
+  | Interface _
   (* CR mshinwell: find out what "partial" implementations and
       interfaces are, and fix cmt_format.mli so it tells you *)
-  | Cmt_format.Partial_implementation _
-  | Cmt_format.Partial_interface _ -> String.Map.empty, LocTable.empty
-  | Cmt_format.Implementation structure ->
+  | Partial_implementation _
+  | Partial_interface _ -> String.Map.empty, LocTable.empty
+  | Implementation structure ->
     process_implementation ~structure ~idents_to_types:String.Map.empty
       ~app_points:LocTable.empty
 
-let search_path_from_cmt_infos cmt_infos =
-  List.map (fun leaf ->
-      if Filename.is_relative leaf then
-        Filename.concat cmt_infos.Cmt_format.cmt_builddir leaf
-      else leaf)
-    cmt_infos.Cmt_format.cmt_loadpath
+let search_path_from_cmt_infos (cmt_infos : Cmt_format.cmt_infos) =
+  List.map cmt_infos.cmt_loadpath ~f:(fun leaf ->
+    if Filename.is_relative leaf then
+      Filename.concat cmt_infos.Cmt_format.cmt_builddir leaf
+    else leaf)
 
 let search_path t =
   match t.cmt_infos with

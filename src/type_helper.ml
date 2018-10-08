@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -27,7 +27,7 @@
 (*                                                                         *)
 (***************************************************************************)
 
-[@@@ocaml.warning "+a-4-9-30-40-41-42"]
+[@@@ocaml.warning "+a-4-30-40-41-42"]
 
 let type_expr_and_env_from_dwarf_type ~dwarf_type ~cmt_cache
       ~cmt_file_search_path =
@@ -50,7 +50,10 @@ let type_expr_and_env_from_dwarf_type ~dwarf_type ~cmt_cache
           ~expected_in_directory:output_dir
       in
       match cmt with
-      | None -> Printf.eprintf "cmt not found\n%!"; None
+      | None ->
+        Printf.eprintf ".cmt file %s in directory %s not found\n%!"
+          cmt_leafname output_dir;
+        None
       | Some cmt ->
         Cmt_cache.set_secondary_search_path cmt_cache
           (Cmt_file.search_path cmt);

@@ -4,7 +4,7 @@
 (*                                                                        *)
 (*                  Mark Shinwell, Jane Street Europe                     *)
 (*                                                                        *)
-(* Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
+(* Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
 (*                                                                        *)
 (* Permission is hereby granted, free of charge, to any person obtaining  *)
 (* a copy of this software and associated documentation files             *)
@@ -26,6 +26,8 @@
 (* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 *)
 (*                                                                        *)
 (**************************************************************************)
+
+[@@@ocaml.warning "+a-4-30-40-41-42"]
 
 type t
 
