@@ -5,7 +5,7 @@
 /*                  Mark Shinwell, Jane Street Europe                     */
 /*                  with assistance from Frederic Bour                    */
 /*                                                                        */
-/* Copyright (c) 2013--2016 Jane Street Group, LLC                        */
+/* Copyright (c) 2013--2018 Jane Street Group, LLC                        */
 /*                                                                        */
 /* Permission is hereby granted, free of charge, to any person obtaining  */
 /* a copy of this software and associated documentation files             */
@@ -28,13 +28,35 @@
 /*                                                                        */
 /**************************************************************************/
 
-#include <caml/memory.h>
-#include <caml/alloc.h>
-#include <caml/mlvalues.h>
+/* CR mshinwell: Unclear why this is needed.  The -I paths and the #includes
+   here match ocaml-lang.c in the gdb tree, which does not need this. */
+#define _GL_ATTRIBUTE_FORMAT_PRINTF(a, b)
 
 #include "defs.h"
+#include "gdbtypes.h"
 #include "symtab.h"
-#include "value.h"
+#include "expression.h"
+#include "parser-defs.h"
+#include "symtab.h"
+#include "language.h"
+#include "c-lang.h"
+#include "gdb_assert.h"
+#include "ocaml-lang.h"
+#include "target.h"
+#include "valprint.h"
+#include "breakpoint.h"
+#include "arch-utils.h"
+#include "gdbcmd.h"
+#include "varobj.h"
+
+#include <ctype.h>
+#include <stdio.h>
+
+namespace ocaml {
+  #include <caml/memory.h>
+  #include <caml/alloc.h>
+  #include <caml/mlvalues.h>
+}
 
 /* Remember: No gdb exceptions may escape from the functions called from OCaml
    in this file.  (See from_gdb.c for an explanation.)
@@ -49,6 +71,8 @@ static int
 compilation_directories_for_source_file_callback(struct symtab* symtab,
                                                  void* directories_list_head)
 {
+  using namespace ocaml;
+
   CAMLparam0();
   CAMLlocal1(v_dirname);
 

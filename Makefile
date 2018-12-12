@@ -38,18 +38,26 @@ OCAML_ROOT=/usr/local/home/mshinwell/ocaml-gdb-pic-install
 OCAMLOPT=$(OCAML_ROOT)/bin/ocamlopt -verbose -I +compiler-libs -I ./src \
   -g -fPIC -I ./gdb_backend
 
-CC=gcc -O0 -fPIC -Werror -g \
+CC=g++ -x c++ -std=gnu++11 -g -O0 \
+	-DLOCALEDIR="/usr/local/home/mshinwell/mshinwell-gdb-install/share/locale" \
+	-DHAVE_CONFIG_H \
   -I$(OCAML_ROOT)/lib/ocaml \
-  -I$(GDB_ROOT)/gdb \
-  -I$(GDB_ROOT)/gdb/common \
-  -I$(GDB_ROOT)/gdb/config \
-  -DHAVE_CONFIG_H \
+	-I$(GDB_ROOT)/gdb \
+	-I$(GDB_ROOT)/gdb/common \
+	-I$(GDB_ROOT)/gdb/config \
+  -I$(GDB_ROOT)/include/opcode \
+	-I$(GDB_ROOT)/zlib \
+  -I$(GDB_ROOT)/bfd \
   -I$(GDB_ROOT)/include \
-  -I$(GDB_ROOT)/gdb/gnulib/import \
-  -I$(GDB_ROOT)/gdb/build-gnulib/import
-
-#  -I$(GDB_ROOT)/bfd \
-#  -I$(GDB_ROOT)/intl \
+  -I$(GDB_ROOT)/libdecnumber \
+	-I$(GDB_ROOT)/gdb/gnulib/import \
+  -I$(GDB_ROOT)/build-gnulib/import \
+  -DTUI=1 \
+	-I/usr/include/python2.7 -I/usr/include/python2.7 -Wall -Wpointer-arith \
+	-Wno-unused -Wunused-value -Wunused-function -Wno-switch \
+  -Wno-char-subscripts \
+	-Wempty-body -Wunused-but-set-parameter -Wunused-but-set-variable \
+	-Wno-sign-compare -Wno-narrowing -Wno-error=maybe-uninitialized
 
 GDB_BACKEND=gdb_backend/gdb_debugger.mli \
   gdb_backend/gdb_debugger.ml \

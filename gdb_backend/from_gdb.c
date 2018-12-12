@@ -29,13 +29,6 @@
 
 #define CAML_NAME_SPACE 1
 
-#include <caml/memory.h>
-#include <caml/alloc.h>
-#include <caml/mlvalues.h>
-#include <caml/callback.h>
-#include <caml/custom.h>
-#include <caml/fail.h>
-
 #include "defs.h"
 #include "frame.h"
 #include "infcall.h"
@@ -46,6 +39,13 @@
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
+
+#include <caml/memory.h>
+#include <caml/alloc.h>
+#include <caml/mlvalues.h>
+#include <caml/callback.h>
+#include <caml/custom.h>
+#include <caml/fail.h>
 
 extern value caml_make_vect (value, value);
 /* These are initialized by way of [_initialize_ocaml_language]. */
@@ -66,7 +66,7 @@ monda_init (void)
 }
 
 void
-monda_val_print (struct type* type, const gdb_byte* valaddr,
+monda_val_print (struct type* type,
                  int embedded_offset, CORE_ADDR address,
                  struct ui_file* stream, int recurse, const struct value* val,
                  const struct value_print_options* options, int depth,
@@ -79,6 +79,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
   CAMLlocalN(args, 11);
   static value* callback = NULL;
   int is_synthetic_pointer;
+  const gdb_byte* valaddr;
 
   /* The try/catch is required so we don't leave local roots incorrectly
      registered in the case of an exception.
@@ -94,6 +95,7 @@ monda_val_print (struct type* type, const gdb_byte* valaddr,
       assert (callback != NULL);
     }
 
+    valaddr = value_contents_for_printing(val);
     v_value =
       (valaddr == NULL) ? caml_copy_nativeint(0)
         : caml_copy_nativeint(*(intnat*) valaddr);
