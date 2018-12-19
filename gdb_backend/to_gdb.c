@@ -102,7 +102,7 @@ public:
   }
 };
 
-caml_value
+extern "C" caml_value
 monda_compilation_directories_for_source_file(caml_value v_file)
 {
   CAMLparam0();
@@ -125,7 +125,7 @@ monda_compilation_directories_for_source_file(caml_value v_file)
   CAMLreturn(v_directories_list);
 }
 
-caml_value
+extern "C" caml_value
 monda_find_pc_line (CORE_ADDR addr, int not_current)
 {
   CAMLparam0();
@@ -219,7 +219,7 @@ find_named_value_callback(const char* name, struct symbol* sym,
   }
 }
 
-caml_value
+extern "C" caml_value
 monda_find_named_value(caml_value v_name)
 {
   /* Search arguments and local variables of the selected frame to find a
@@ -288,7 +288,7 @@ monda_find_named_value(caml_value v_name)
   CAMLreturn(v_option);
 }
 
-caml_value
+extern "C" caml_value
 monda_find_global_symbol(caml_value v_name)
 {
   /* Search for a global "symbol" with the given name.  The name is one as
@@ -373,7 +373,7 @@ monda_find_global_symbol(caml_value v_name)
   CAMLreturn(v_option);
 }
 
-caml_value
+extern "C" caml_value
 monda_value_struct_elt(struct value* v, caml_value field_name)
 {
   struct value* found;
@@ -392,7 +392,7 @@ monda_value_struct_elt(struct value* v, caml_value field_name)
 
 static const uint64_t zero = (uint64_t) 0;
 
-const gdb_byte*
+extern "C" const gdb_byte*
 monda_value_contents(struct value* v)
 {
   const gdb_byte* contents;
@@ -408,7 +408,7 @@ monda_value_contents(struct value* v)
   return contents;
 }
 
-int
+extern "C" int
 monda_target_read_memory(CORE_ADDR memaddr, gdb_byte* myaddr,
                          ssize_t len)
 {
@@ -425,7 +425,7 @@ monda_target_read_memory(CORE_ADDR memaddr, gdb_byte* myaddr,
   return retval;
 }
 
-caml_value
+extern "C" caml_value
 monda_fputs_filtered(const char* msg, struct ui_file* file)
 {
   TRY {
@@ -439,7 +439,7 @@ monda_fputs_filtered(const char* msg, struct ui_file* file)
   return Val_unit;
 }
 
-int
+extern "C" int
 monda_find_pc_partial_function(CORE_ADDR addr, const char** fun_name,
                                CORE_ADDR* start_addr, CORE_ADDR* end_addr)
 {
@@ -456,7 +456,7 @@ monda_find_pc_partial_function(CORE_ADDR addr, const char** fun_name,
   return retval;
 }
 
-int
+extern "C" int
 monda_value_bits_synthetic_pointer(const struct value* value,
                                    int offset, int length)
 {

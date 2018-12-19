@@ -62,7 +62,7 @@ static int value_printer_max_depth;
 static int value_printer_max_string_length;
 static char* search_path = NULL;
 
-int
+extern "C" int
 monda_init (void)
 {
   char* argv[2];
@@ -72,7 +72,7 @@ monda_init (void)
   return 1;
 }
 
-void
+extern "C" void
 monda_val_print (struct type* type, int embedded_offset, CORE_ADDR address,
                  struct ui_file* stream, int recurse, struct value* val,
                  const struct value_print_options* options, int depth,
@@ -180,7 +180,7 @@ monda_val_print (struct type* type, int embedded_offset, CORE_ADDR address,
   CAMLreturn0;
 }
 
-int
+extern "C" int
 monda_parse (const char* expr, int length)
 {
   caml_value v_expr;
@@ -201,7 +201,7 @@ monda_parse (const char* expr, int length)
   return 0;
 }
 
-CORE_ADDR
+extern "C" CORE_ADDR
 monda_evaluate (const char* expr, int length, char** type_name_out)
 {
   CAMLparam0();
@@ -249,19 +249,19 @@ printf("monda_evaluate '%s'\n", expr);fflush(stdout);
     failed ? (CORE_ADDR) 0 : (CORE_ADDR) Nativeint_val(Field(v_result, 0)));
 }
 
-void
+extern "C" void
 monda_set_value_printer_max_depth(int new_max_depth)
 {
   value_printer_max_depth = new_max_depth;
 }
 
-void
+extern "C" void
 monda_set_value_printer_max_string_length(int new_max_string_length)
 {
   value_printer_max_string_length = new_max_string_length;
 }
 
-void
+extern "C" void
 monda_set_search_path(char *new_search_path)
 {
   if (search_path) {
@@ -273,20 +273,20 @@ monda_set_search_path(char *new_search_path)
 }
 
 /*
-value
+extern "C" value
 gdb_ocaml_value_printer_max_depth(value v_unit)
 {
   return Val_long(value_printer_max_depth);
 }
 
-value
+extern "C" value
 gdb_ocaml_search_path(value v_unit)
 {
   return caml_copy_string(search_path);
 }
 */
 
-char*
+extern "C" char*
 monda_demangle (char* mangled, int options)
 {
   CAMLparam0();
