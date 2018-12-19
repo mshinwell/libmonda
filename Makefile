@@ -38,7 +38,7 @@ OCAML_ROOT=/usr/local/home/mshinwell/ocaml-gdb-pic-install
 OCAMLOPT=$(OCAML_ROOT)/bin/ocamlopt -verbose -I +compiler-libs -I ./src \
   -g -fPIC -I ./gdb_backend
 
-CC=g++ -x c++ -std=gnu++11 -g -O0 \
+CC=g++ -x c++ -std=gnu++11 -g -fPIC -O0 \
 	-DLOCALEDIR="/usr/local/home/mshinwell/mshinwell-gdb-install/share/locale" \
 	-DHAVE_CONFIG_H \
   -I$(OCAML_ROOT)/lib/ocaml \

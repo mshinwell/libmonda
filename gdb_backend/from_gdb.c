@@ -27,18 +27,25 @@
 /*                                                                         */
 /***************************************************************************/
 
-#define CAML_NAME_SPACE 1
+#define _GL_ATTRIBUTE_FORMAT_PRINTF(a, b)
+
+/* gdb headers must be included before any system headers. */
 
 #include "defs.h"
 #include "frame.h"
 #include "infcall.h"
 #include "stack.h"
 #include "symtab.h"
+#include "value.h"
 #include "valprint.h"
+#include "c-lang.h"
 
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
+
+#define CAML_NAME_SPACE 1
+#define CAML_DO_NOT_TYPEDEF_VALUE 1
 
 #include <caml/memory.h>
 #include <caml/alloc.h>
@@ -59,16 +66,15 @@ int
 monda_init (void)
 {
   char* argv[2];
-  argv[0] = "--";
+  argv[0] = xstrdup("--");
   argv[1] = NULL;
   caml_startup (argv);
   return 1;
 }
 
 void
-monda_val_print (struct type* type,
-                 int embedded_offset, CORE_ADDR address,
-                 struct ui_file* stream, int recurse, const struct value* val,
+monda_val_print (struct type* type, int embedded_offset, CORE_ADDR address,
+                 struct ui_file* stream, int recurse, struct value* val,
                  const struct value_print_options* options, int depth,
                  int max_string_length, int only_print_short_type,
                  int only_print_short_value)
@@ -77,7 +83,7 @@ monda_val_print (struct type* type,
   CAMLlocal4(v_type, v_stream, v_value, v_search_path);
   CAMLlocal1(v_val);
   CAMLlocalN(args, 11);
-  static value* callback = NULL;
+  static caml_value* callback = NULL;
   int is_synthetic_pointer;
   const gdb_byte* valaddr;
 
@@ -158,8 +164,8 @@ monda_val_print (struct type* type,
         fprintf(stderr, "monda_val_print -> c_val_print (2)\n");
         fflush(stderr);
         */
-        c_val_print(type, valaddr, embedded_offset, address, stream, recurse,
-          val, options, depth);
+        c_val_print (type, embedded_offset, address, stream, recurse, val,
+                     options);
       }
     }
   }
@@ -177,8 +183,8 @@ monda_val_print (struct type* type,
 int
 monda_parse (const char* expr, int length)
 {
-  value v_expr;
-  static value* cb = NULL;
+  caml_value v_expr;
+  static caml_value* cb = NULL;
 
   if (cb == NULL) {
     cb = caml_named_value ("From_gdb_ocaml.parse");
@@ -200,8 +206,8 @@ monda_evaluate (const char* expr, int length, char** type_name_out)
 {
   CAMLparam0();
   CAMLlocal3(v_stream, v_expr, v_search_path);
-  value v_result;
-  static value* cb = NULL;
+  caml_value v_result;
+  static caml_value* cb = NULL;
   int failed = 0;
 /*
 printf("monda_evaluate '%s'\n", expr);fflush(stdout);
@@ -218,8 +224,10 @@ printf("monda_evaluate '%s'\n", expr);fflush(stdout);
 
   v_expr = caml_copy_string(expr);
 
-  /* We assume [stderr_fileopen] doesn't raise any exceptions. */
-  v_stream = caml_copy_int64((uint64_t) stderr_fileopen());
+  /* CR mshinwell: We should adjust this code to call back into gdb to
+     write to [gdb_stderr].  It isn't clear how to propagate the fd into
+     here. */
+  v_stream = caml_copy_int64((uint64_t) 2);
 
   v_search_path = caml_copy_string(search_path ? search_path : "");
 
@@ -283,7 +291,7 @@ monda_demangle (char* mangled, int options)
 {
   CAMLparam0();
   CAMLlocal2(caml_res, caml_mangled);
-  static value* cb = NULL;
+  static caml_value* cb = NULL;
   char* res = NULL;
 
   if (cb == NULL) {

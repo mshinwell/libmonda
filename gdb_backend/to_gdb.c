@@ -32,6 +32,8 @@
    here match ocaml-lang.c in the gdb tree, which does not need this. */
 #define _GL_ATTRIBUTE_FORMAT_PRINTF(a, b)
 
+/* gdb headers must be included before any system headers. */
+
 #include "defs.h"
 #include "gdbtypes.h"
 #include "symtab.h"
@@ -48,15 +50,17 @@
 #include "arch-utils.h"
 #include "gdbcmd.h"
 #include "varobj.h"
+#include "stack.h"
 
 #include <ctype.h>
 #include <stdio.h>
 
-namespace ocaml {
-  #include <caml/memory.h>
-  #include <caml/alloc.h>
-  #include <caml/mlvalues.h>
-}
+#define CAML_NAME_SPACE 1
+#define CAML_DO_NOT_TYPEDEF_VALUE 1
+
+#include <caml/memory.h>
+#include <caml/alloc.h>
+#include <caml/mlvalues.h>
 
 /* Remember: No gdb exceptions may escape from the functions called from OCaml
    in this file.  (See from_gdb.c for an explanation.)
@@ -67,41 +71,51 @@ namespace ocaml {
    that we do not need to use [CAMLdrop].
 */
 
-static int
-compilation_directories_for_source_file_callback(struct symtab* symtab,
-                                                 void* directories_list_head)
-{
-  using namespace ocaml;
+class compilation_directories_collector {
+private:
+  caml_value* v_directories_list_head;
 
-  CAMLparam0();
-  CAMLlocal1(v_dirname);
-
-  if (symtab->compunit_symtab->dirname) {
-    value v_list_cell;
-
-    v_dirname = caml_copy_string(symtab->compunit_symtab->dirname);
-
-    v_list_cell = caml_alloc_small(2, 0);
-    Field(v_list_cell, 0) = v_dirname;
-    Field(v_list_cell, 1) = *(value*) directories_list_head;
-
-    *(value*) directories_list_head = v_list_cell;
+public:
+  compilation_directories_collector(caml_value* v_directories_list_head)
+    : v_directories_list_head(v_directories_list_head)
+  {
   }
 
-  CAMLreturnT(int, 0);  /* always continue the search */
-}
+  bool operator() (symtab *symtab)
+  {
+    CAMLparam0();
+    CAMLlocal1(v_dirname);
 
-CAMLprim value
-monda_compilation_directories_for_source_file(value v_file)
+    if (symtab->compunit_symtab->dirname) {
+      caml_value v_list_cell;
+
+      v_dirname = caml_copy_string(symtab->compunit_symtab->dirname);
+
+      v_list_cell = caml_alloc_small(2, 0);
+      Field(v_list_cell, 0) = v_dirname;
+      Field(v_list_cell, 1) = *v_directories_list_head;
+
+      *v_directories_list_head = v_list_cell;
+    }
+
+    CAMLreturnT(bool, false /* continue the search */);
+  }
+};
+
+caml_value
+monda_compilation_directories_for_source_file(caml_value v_file)
 {
   CAMLparam0();
   CAMLlocal1(v_directories_list);
 
   TRY {
     v_directories_list = Val_long(0);
-    iterate_over_symtabs(String_val(v_file),
-      &compilation_directories_for_source_file_callback,
-      &v_directories_list);  /* take the address since we may cause a GC */
+
+    /* We take the address of [v_directories_list] since we may
+       cause a GC during the iteration. */
+    compilation_directories_collector collector(&v_directories_list);
+
+    iterate_over_symtabs(String_val(v_file), collector);
   }
   CATCH (ex, RETURN_MASK_ALL) {
     v_directories_list = Val_long(0);
@@ -111,11 +125,11 @@ monda_compilation_directories_for_source_file(value v_file)
   CAMLreturn(v_directories_list);
 }
 
-CAMLprim value
+caml_value
 monda_find_pc_line (CORE_ADDR addr, int not_current)
 {
   CAMLparam0();
-  value result;
+  caml_value result;
   CAMLlocal3(v_line, v_filename, v_filename_and_line);
 
   TRY {
@@ -205,21 +219,21 @@ find_named_value_callback(const char* name, struct symbol* sym,
   }
 }
 
-CAMLprim value
-monda_find_named_value(value v_name)
+caml_value
+monda_find_named_value(caml_value v_name)
 {
   /* Search arguments and local variables of the selected frame to find a
      value with the given name. */
 
   CAMLparam0();
   CORE_ADDR pc;
-  static value *callback = NULL;
+  static caml_value *callback = NULL;
   struct frame_info* selected_frame;
   struct symbol* function;
   const struct block* block;
   find_named_value_data output;
   CAMLlocal2(v_found_value, v_dwarf_type);
-  value v_option;
+  caml_value v_option;
   CORE_ADDR address;
   struct type* type;
   int failed = 0;
@@ -274,8 +288,8 @@ monda_find_named_value(value v_name)
   CAMLreturn(v_option);
 }
 
-CAMLprim value
-monda_find_global_symbol(value v_name)
+caml_value
+monda_find_global_symbol(caml_value v_name)
 {
   /* Search for a global "symbol" with the given name.  The name is one as
      written into DW_AT_name for toplevel constant and inconstant identifiers.
@@ -283,7 +297,7 @@ monda_find_global_symbol(value v_name)
 
   CAMLparam0();
   CAMLlocal2(v_found_value, v_dwarf_type);
-  value v_option;
+  caml_value v_option;
   struct block_symbol sym;
   uint64_t sym_value;
 
@@ -304,8 +318,12 @@ monda_find_global_symbol(value v_name)
 
         case LOC_COMPUTED: { /* Initialize_symbol / inconstant case */
           struct value* v;
+          symbol_needs_kind needs;
 
-          if (SYMBOL_COMPUTED_OPS(sym.symbol)->read_needs_frame(sym.symbol)
+          needs = SYMBOL_COMPUTED_OPS(sym.symbol)
+            ->get_symbol_read_needs(sym.symbol);
+
+          if (needs == SYMBOL_NEEDS_FRAME
                 || SYMBOL_COMPUTED_OPS(sym.symbol)->location_has_loclist) {
             /* We jolly well shouldn't need a frame; we should also not be
                PC-dependent (i.e. no location list). */
@@ -355,8 +373,8 @@ monda_find_global_symbol(value v_name)
   CAMLreturn(v_option);
 }
 
-CAMLprim value
-monda_value_struct_elt(struct value* v, value field_name)
+caml_value
+monda_value_struct_elt(struct value* v, caml_value field_name)
 {
   struct value* found;
 
@@ -369,12 +387,12 @@ monda_value_struct_elt(struct value* v, value field_name)
   }
   END_CATCH
 
-  return (value) found;
+  return (caml_value) found;
 }
 
 static const uint64_t zero = (uint64_t) 0;
 
-CAMLprim const gdb_byte*
+const gdb_byte*
 monda_value_contents(struct value* v)
 {
   const gdb_byte* contents;
@@ -390,7 +408,7 @@ monda_value_contents(struct value* v)
   return contents;
 }
 
-CAMLprim int
+int
 monda_target_read_memory(CORE_ADDR memaddr, gdb_byte* myaddr,
                          ssize_t len)
 {
@@ -407,7 +425,7 @@ monda_target_read_memory(CORE_ADDR memaddr, gdb_byte* myaddr,
   return retval;
 }
 
-CAMLprim value
+caml_value
 monda_fputs_filtered(const char* msg, struct ui_file* file)
 {
   TRY {
@@ -421,7 +439,7 @@ monda_fputs_filtered(const char* msg, struct ui_file* file)
   return Val_unit;
 }
 
-CAMLprim int
+int
 monda_find_pc_partial_function(CORE_ADDR addr, const char** fun_name,
                                CORE_ADDR* start_addr, CORE_ADDR* end_addr)
 {
@@ -438,7 +456,7 @@ monda_find_pc_partial_function(CORE_ADDR addr, const char** fun_name,
   return retval;
 }
 
-CAMLprim int
+int
 monda_value_bits_synthetic_pointer(const struct value* value,
                                    int offset, int length)
 {
@@ -455,7 +473,7 @@ monda_value_bits_synthetic_pointer(const struct value* value,
   return retval;
 }
 
-CAMLprim LONGEST
+LONGEST
 monda_value_as_long(struct value* value)
 {
   LONGEST retval;
