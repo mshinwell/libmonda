@@ -473,7 +473,7 @@ monda_value_bits_synthetic_pointer(const struct value* value,
   return retval;
 }
 
-LONGEST
+extern "C" LONGEST
 monda_value_as_long(struct value* value)
 {
   LONGEST retval;
