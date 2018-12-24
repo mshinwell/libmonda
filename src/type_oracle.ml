@@ -47,6 +47,7 @@ module Result = struct
   type t =
     | Obj_boxed_traversable
     | Obj_boxed_not_traversable
+    (* CR mshinwell: naming *)
     | Obj_unboxed
     | Obj_unboxed_but_should_be_boxed
     | Abstract of Path.t
@@ -71,6 +72,7 @@ module Result = struct
     | Lazy
     | Object
     | Abstract_tag
+    | Format6
     | Custom
     | Unknown
 
@@ -97,6 +99,7 @@ module Result = struct
     | Lazy -> "Lazy"
     | Object -> "Object"
     | Abstract_tag -> "Abstract_tag"
+    | Format6 -> "Format6"
     | Custom -> "Custom"
     | Unknown -> "Unknown"
 end
@@ -130,6 +133,10 @@ module Make (D : Debugger.S) = struct
     in
     constant_ctors
 
+  let format6_path =
+    Path.(Pdot (Pident (Ident.create_persistent "CamlinternalFormatBasics"),
+      "format6", 0))
+
   let check_predef_paths ~path ~args ~env ~scrutinee : Result.t option =
     (* CR mshinwell: validate more things (e.g. value size) *)
     if Path.same path Predef.path_array then
@@ -155,12 +162,19 @@ module Make (D : Debugger.S) = struct
       match scrutinee with
       | Unboxed _ | Absent -> Some Char
       | Boxed _ -> Some Obj_boxed_traversable  (* should not be boxed *)
+    else if Path.same path format6_path then
+      match scrutinee with
+      | Unboxed _ -> Some Obj_unboxed
+      | Boxed _ -> Some Format6
+      | Absent -> Some Unknown
     else
       None
 
   let rec examine_type_expr t ~formatter ~paths_visited_so_far ~type_expr ~env
         ~scrutinee : Result.t =
-    match (Btype.repr type_expr).Types.desc with
+    let type_expr = Ctype.expand_head env type_expr in
+(*Format.fprintf formatter "type_expr: %a\n%!" Printtyp.raw_type_expr type_expr;*)
+    match type_expr.Types.desc with
     | Types.Tconstr (path, args, _abbrev_memo_ref) ->
       begin match check_predef_paths ~path ~args ~env ~scrutinee with
       | Some result -> result

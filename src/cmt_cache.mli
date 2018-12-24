@@ -40,8 +40,7 @@ val get_primary_search_path : t -> string list
 val get_search_path : t -> string list
 
 val load
-   : ?expected_in_directory:string
-  -> t
+   : t
   -> leafname:string
   -> Cmt_file.t option
 

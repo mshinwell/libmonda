@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -27,7 +27,7 @@
 (*                                                                         *)
 (***************************************************************************)
 
-[@@@ocaml.warning "+a-4-9-30-40-41-42"]
+[@@@ocaml.warning "+a-4-30-40-41-42"]
 
 module List = ListLabels
 module Variant_kind = Type_oracle.Variant_kind
@@ -37,6 +37,7 @@ let debug = Monda_debug.debug
 module Make (D : Debugger.S) = struct
   module Our_type_oracle = Type_oracle.Make (D)
   module V = D.Value
+  module Our_value_copier = Value_copier.Make (D)
 
   type t = {
     type_oracle : Our_type_oracle.t;
@@ -168,6 +169,7 @@ module Make (D : Debugger.S) = struct
       | Lazy -> Format.fprintf formatter "<lazy>"
       | Object -> Format.fprintf formatter "<object>"
       | Abstract_tag -> Format.fprintf formatter "<block with Abstract_tag>"
+      | Format6 -> print_format6 t ~state v
       | Custom -> print_custom_block t ~state v
       | Unknown -> Format.fprintf formatter "unknown"
     end;
@@ -416,7 +418,7 @@ module Make (D : Debugger.S) = struct
                   let partial_app_pc = V.field_as_addr_exn v 0 in
                   let pc = V.field_as_addr_exn v 2 in
                   (* Try to determine if the closure corresponds to a
-                    partially-applied function. *)
+                     partially-applied function. *)
                   match D.symbol_at_pc partial_app_pc with
                   | None -> None, pc
                   | Some symbol ->
@@ -580,6 +582,11 @@ module Make (D : Debugger.S) = struct
       Format.fprintf formatter " |] (* float array *)@]"
     end
 
+  and print_format6 _t ~state v =
+    let formatter = state.formatter in
+    let format_string : _ format6 = Our_value_copier.copy v in
+    Format.pp_print_string formatter (string_of_format format_string)
+
   and print_custom_block _t ~state v =
     let formatter = state.formatter in
     if V.size_exn v < 2 then
@@ -659,6 +666,7 @@ module Make (D : Debugger.S) = struct
     | Lazy -> Format.fprintf formatter "lazy"
     | Object -> Format.fprintf formatter "object"
     | Abstract_tag -> Format.fprintf formatter "abstract-tag"
+    | Format6 -> Format.fprintf formatter "format6"
     | Custom -> Format.fprintf formatter "custom"
     | Unknown -> Format.fprintf formatter "unknown"
 
@@ -696,6 +704,7 @@ module Make (D : Debugger.S) = struct
     | Lazy -> Format.fprintf formatter "lazy"
     | Object -> Format.fprintf formatter "object"
     | Abstract_tag -> Format.fprintf formatter "abstract-tag"
+    | Format6 -> Format.fprintf formatter "format6"
     | Custom -> Format.fprintf formatter "custom"
     | Unknown -> Format.fprintf formatter "unknown"
 
@@ -706,23 +715,36 @@ module Make (D : Debugger.S) = struct
       Format.printf "Value_printer.print %a type %s\n%!"
         V.print scrutinee dwarf_type
     end;
+    let type_of_ident =
+      match Cmt_cache.find_cached_type t.cmt_cache ~cached_type:dwarf_type with
+      | Some type_expr_and_env -> Some type_expr_and_env
+      | None ->
+        Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
+          ~cmt_cache:t.cmt_cache ~cmt_file_search_path
+    in
+    (* CR mshinwell: Do this for the [format] type as well *)
+    let is_unit =
+      (* Print variables (in particular parameters) of type [unit] even when
+         unavailable. *)
+      match type_of_ident with
+      | None -> false
+      | Some (ty, env) ->
+        let ty = Ctype.expand_head env ty in
+        match ty.desc with
+        | Tconstr (path, _, _) -> Path.same path Predef.path_unit
+        | _ -> false
+    in
     (* Example of this null case: [Iphantom_read_var_field] on something
        unavailable. *)
     if V.is_null scrutinee
       && (not only_print_short_type)
+      && (not is_unit)
     then begin
       (* CR mshinwell: This should still return a type even when not in
          short-type mode, no? *)
-      Format.fprintf formatter "<optimized out>";
+      Format.fprintf formatter "<optimized out 1>";
       Format.pp_print_flush formatter ()
     end else begin
-      let type_of_ident =
-        match Cmt_cache.find_cached_type t.cmt_cache ~cached_type:dwarf_type with
-        | Some type_expr_and_env -> Some type_expr_and_env
-        | None ->
-          Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
-            ~cmt_cache:t.cmt_cache ~cmt_file_search_path
-      in
       if debug then Printf.printf "Value_printer.print entry point\n%!";
       Format.fprintf formatter "@[";
       let state = {

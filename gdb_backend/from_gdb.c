@@ -60,7 +60,6 @@ extern value caml_make_vect (value, value);
    in ocaml-lang.c */
 static int value_printer_max_depth;
 static int value_printer_max_string_length;
-static char* search_path = NULL;
 
 extern "C" int
 monda_init (void)
@@ -261,28 +260,11 @@ monda_set_value_printer_max_string_length(int new_max_string_length)
   value_printer_max_string_length = new_max_string_length;
 }
 
-extern "C" void
-monda_set_search_path(char *new_search_path)
-{
-  if (search_path) {
-    free(search_path);
-  }
-  if (new_search_path) {
-    search_path = strdup(new_search_path);
-  }
-}
-
 /*
 extern "C" value
 gdb_ocaml_value_printer_max_depth(value v_unit)
 {
   return Val_long(value_printer_max_depth);
-}
-
-extern "C" value
-gdb_ocaml_search_path(value v_unit)
-{
-  return caml_copy_string(search_path);
 }
 */
 

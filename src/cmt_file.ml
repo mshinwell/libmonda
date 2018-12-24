@@ -298,30 +298,26 @@ let create_idents_to_types_map ~(cmt_infos : Cmt_format.cmt_infos) =
     process_implementation ~structure ~idents_to_types:String.Map.empty
       ~app_points:LocTable.empty
 
-let search_path_from_cmt_infos (cmt_infos : Cmt_format.cmt_infos) =
+let load_path_from_cmt_infos (cmt_infos : Cmt_format.cmt_infos) =
   List.map cmt_infos.cmt_loadpath ~f:(fun leaf ->
     if Filename.is_relative leaf then
       Filename.concat cmt_infos.Cmt_format.cmt_builddir leaf
     else leaf)
 
-let search_path t =
+let load_path t =
   match t.cmt_infos with
   | None -> []
-  | Some cmt_infos -> search_path_from_cmt_infos cmt_infos
+  | Some cmt_infos -> load_path_from_cmt_infos cmt_infos
 
-let load ~pathname ~primary_search_path_for_dependencies =
+let load ~pathname =
   if debug then Printf.printf "attempting to load cmt file: %s\n%!" pathname;
   match Cmt_format.read pathname with
   | exception (Sys_error _) -> None
   | cmi_infos, cmt_infos ->
-    let load_path = !Config.load_path in
     let idents_to_types, _application_points =
       match cmt_infos with
       | None -> String.Map.empty, LocTable.empty
       | Some cmt_infos ->
-        let secondary_search_path = search_path_from_cmt_infos cmt_infos in
-        Config.load_path :=
-          primary_search_path_for_dependencies @ secondary_search_path;
         let idents, app_points = create_idents_to_types_map ~cmt_infos in
         try
           let idents =
@@ -372,7 +368,6 @@ let load ~pathname ~primary_search_path_for_dependencies =
           String.Map.empty, LocTable.empty
         end
     in
-    Config.load_path := load_path;
     let t =
       { cmi_infos;
         cmt_infos;

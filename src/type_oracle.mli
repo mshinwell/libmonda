@@ -71,6 +71,7 @@ module Result : sig
     | Lazy
     | Object
     | Abstract_tag
+    | Format6
     | Custom
     | Unknown
 

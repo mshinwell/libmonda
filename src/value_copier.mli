@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2016--2018 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2018 Jane Street Group, LLC                              *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -29,9 +29,8 @@
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
+(** Copying of values out of the target into the debugger's memory space. *)
+
 module Make (D : Debugger.S) : sig
-  val type_expr_and_env_from_dwarf_type
-     : dwarf_type:string
-    -> cmt_cache:Cmt_cache.t
-    -> (Types.type_expr * Env.t) option
+  val copy : D.Value.t -> 'a
 end

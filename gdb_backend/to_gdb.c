@@ -51,6 +51,7 @@
 #include "gdbcmd.h"
 #include "varobj.h"
 #include "stack.h"
+#include "source.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -71,6 +72,8 @@
    that we do not need to use [CAMLdrop].
 */
 
+#if 0
+/* Not currently used */
 class compilation_directories_collector {
 private:
   caml_value* v_directories_list_head;
@@ -105,7 +108,7 @@ public:
 extern "C" caml_value
 monda_compilation_directories_for_source_file(caml_value v_file)
 {
-  CAMLparam0();
+  CAMLparam1(v_file);
   CAMLlocal1(v_directories_list);
 
   TRY {
@@ -123,6 +126,103 @@ monda_compilation_directories_for_source_file(caml_value v_file)
   END_CATCH
 
   CAMLreturn(v_directories_list);
+}
+#endif
+
+extern "C" caml_value
+monda_add_search_path(caml_value v_dirname)
+{
+  add_path(String_val(v_dirname), &source_path, 0);
+}
+
+extern "C" caml_value
+monda_find_and_open(caml_value v_filename, caml_value v_dirname)
+{
+  CAMLparam2(v_filename, v_dirname);
+  CAMLlocal2(v_fullname_and_fd, v_some);
+
+  int result;
+  gdb::unique_xmalloc_ptr<char> fullname;
+
+  result = find_and_open_source (String_val(v_filename), String_val(v_dirname),
+                                 &fullname);
+
+  if (result == -1)
+    {
+      /* CR mshinwell: Transmit [errno] back. */
+      CAMLreturn(Val_long(0) /* None */);
+    }
+
+  v_fullname_and_fd = caml_alloc(2, 0);
+  Store_field(v_fullname_and_fd, 0, caml_copy_string(fullname));
+  Store_field(v_fullname_and_fd, 1, Val_long(result));
+
+  v_some = caml_alloc_small(1, 0 /* Some */);
+  Field(v_some, 0) = v_fullname_and_fd;
+
+  CAMLreturn(v_some);
+}
+
+static caml_value
+copy_string_or_none(const char* str)
+{
+  CAMLparam0();
+  CAMLlocal2(v_str, v_some);
+
+  if (str == NULL) {
+    CAMLreturn(Val_long(0) /* None */);
+  }
+
+  v_str = caml_copy_string(str);
+  v_some = caml_alloc_small(1, 0 /* Some */);
+  Field(v_some, 0) = v_str;
+
+  CAMLreturn(v_some);
+}
+
+static caml_value
+build_ocaml_specific_compilation_unit_info(struct compunit_symtab* cu)
+{
+  CAMLparam0();
+  CAMLlocal1(v_comp_unit_info);
+
+  v_comp_unit_info = caml_alloc(4, 0);
+
+  Store_field(v_comp_unit_info, 0,
+              copy_string_or_none(cu->ocaml.compiler_version));
+
+  Store_field(v_comp_unit_info, 1,
+              copy_string_or_none(cu->ocaml.unit_name));
+
+  Store_field(v_comp_unit_info, 2,
+              copy_string_or_none(cu->ocaml.config_digest));
+
+  Store_field(v_comp_unit_info, 3,
+              copy_string_or_none(cu->ocaml.prefix_name));
+
+  CAMLreturn(v_comp_unit_info);
+}
+
+extern "C" caml_value
+monda_ocaml_specific_compilation_unit_info(caml_value v_unit_name)
+{
+  CAMLparam1(v_unit_name);
+  CAMLlocal2(v_comp_unit_info, v_some_comp_unit_info);
+
+  struct objfile* objfile;
+  struct compunit_symtab* cu;
+
+  ALL_COMPUNITS(objfile, cu) {
+    if (cu->ocaml.unit_name != NULL
+          && strcmp(cu->ocaml.unit_name, String_val(v_unit_name)) == 0) {
+      v_comp_unit_info = build_ocaml_specific_compilation_unit_info(&cu);
+      v_some_comp_unit_info = caml_alloc_small(1, 0 /* Some */);
+      Field(v_some_comp_unit_info, 0) = v_comp_unit_info;
+      CAMLreturn(v_some_comp_unit_info);
+    }
+  }
+
+  CAMLreturn(Val_long(0) /* None */);
 }
 
 extern "C" caml_value

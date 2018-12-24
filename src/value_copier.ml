@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2016--2018 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2018 Jane Street Group, LLC                              *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -29,9 +29,35 @@
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
-module Make (D : Debugger.S) : sig
-  val type_expr_and_env_from_dwarf_type
-     : dwarf_type:string
-    -> cmt_cache:Cmt_cache.t
-    -> (Types.type_expr * Env.t) option
+module Make (D : Debugger.S) = struct
+  (* CR mshinwell: Extend to handle cyclic values. *)
+  (* CR mshinwell: Provide proper return values (e.g. "too large"). *)
+
+  module V = D.Value
+
+  let rec copy0 (v : V.t) : 'a =
+    if V.is_int v then begin
+      match V.int v with
+      | None ->
+        (* See CR in debugger.mli *)
+        failwith "Synthetic integer value: not yet implemented"
+      | Some i -> Obj.repr i
+    end else begin
+      assert (V.is_block v);
+      let tag = V.tag_exn v in
+      let size = V.size_exn v in
+      if size < 0 || size > 1024 * 1024 then begin
+        failwith "Outsize value"
+      end;
+      let block = Obj.new_block tag size in
+      for field = 0 to size - 1 do
+        match V.field_exn v field with
+        | None -> failwith "Value only partially available"
+        | Some field_contents ->
+          Obj.set_field block field (copy0 field_contents)
+      done;
+      block
+    end
+
+  let copy v = Obj.magic (copy0 v)
 end

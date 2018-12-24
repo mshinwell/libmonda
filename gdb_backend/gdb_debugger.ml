@@ -27,6 +27,8 @@
 (*                                                                         *)
 (***************************************************************************)
 
+[@@@ocaml.warning "+a-4-30-40-41-42"]
+
 type obj = nativeint
 type target_addr = nativeint
 
@@ -34,7 +36,8 @@ let zero_target_addr = 0n
 
 (* Note: GDB functions may not be called directly from this file; they need
    to go through a wrapper (in to_gdb.c) that catches any GDB exceptions
-   that may be thrown. *)
+   that may be thrown.  (Also, GDB now uses C++ so it is unlikely that any
+   functions can be easily called directly, due to name mangling.) *)
 
 external caml_copy_int32 : Obj.t -> Int32.t = "caml_copy_int32"
 external caml_copy_int64 : Obj.t -> Int64.t = "caml_copy_int64"
@@ -68,6 +71,7 @@ let dereference_out_of_heap_buffer (buf : out_of_heap_buffer)
 
 module Gdb : sig
   (* Bindings directly to gdb. *)
+  (* CR mshinwell: These are not direct bindings any more *)
 
   val target_read_memory
      : addr:target_addr
@@ -136,10 +140,28 @@ type find_named_value_result =
 module Gdb_indirect = struct
   (* Bindings to gdb via C stubs in to_gdb.c. *)
 
-  external compilation_directories_for_source_file
-     : source_filename:string
-    -> string list
-    = "monda_compilation_directories_for_source_file"
+  type raw_ocaml_specific_compilation_unit_info = {
+    compiler_version : string option;
+    unit_name : string option;
+    config_digest : string option;
+    prefix_name : string option;
+  }
+
+  external raw_ocaml_specific_compilation_unit_info
+     : unit_name:string
+    -> raw_ocaml_specific_compilation_unit_info
+    = "monda_ocaml_specific_compilation_unit_info"
+
+  external add_search_path
+     : dirname:string
+    -> unit
+    = "monda_add_search_path"
+
+  external find_and_open
+     : filename:string
+     : dirname:string
+    -> (string * Unix.file_descr) option
+    = "monda_find_and_open"
 
   external find_named_value
      : name:string
@@ -393,14 +415,51 @@ let symbol_at_pc pc =
   | None -> None
   | Some result -> Some (Bytes.to_string result)
 
+type ocaml_specific_compilation_unit_info = {
+  compiler_version : string;
+  unit_name : Ident.t;
+  config_digest : Digest.t;
+  prefix_name : string;
+}
+
+let ocaml_specific_compilation_unit_info ~unit_name
+      : ocaml_specific_compilation_unit_info option =
+  let unit_name = Ident.name unit_name in
+  let unit_info =
+    Gdb_indirect.raw_ocaml_specific_compilation_unit_info ~unit_name
+  in
+  let config_digest =
+    match unit_info.config_digest with
+    | None -> None
+    | Some digest ->
+      match Digest.of_hex unit_info.config_digest with
+      | exception (Invalid_argument _) -> None
+      | digest -> Some digest
+  in
+  match
+    unit_info.compiler_version,
+    unit_info.unit_name,
+    config_digest,
+    unit_info.prefix_name
+  with
+  | Some compiler_version, Some unit_name, Some config_digest,
+      Some prefix_name ->
+    { compiler_version;
+      unit_name = Ident.create_persistent unit_name;
+      config_digest;
+    }
+  | _, _, _, _ -> None
+
+let find_and_open ~filename ~dirname =
+  match Gdb_indirect.find_and_open ~filename ~dirname with
+  | None -> None
+  | Some (filename, fd) -> Some (filename, Unix.in_channel_of_descr)
+
 let filename_and_line_number_of_pc addr
       ~use_previous_line_number_if_on_boundary =
   Gdb.find_pc_line ~addr
     ~use_previous_line_number_if_on_boundary:
       (if use_previous_line_number_if_on_boundary then 1 else 0)
-
-let compilation_directories_for_source_file =
-  Gdb_indirect.compilation_directories_for_source_file
 
 let find_named_value =
   Gdb_indirect.find_named_value

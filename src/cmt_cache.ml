@@ -59,15 +59,10 @@ let get_primary_search_path t = t.primary_search_path
 
 let get_search_path t = t.primary_search_path @ t.secondary_search_path
 
-let load ?expected_in_directory t ~leafname =
+let load t ~leafname =
   try Some (Hashtbl.find t.cache leafname)
   with Not_found ->
-    let search_path =
-      match expected_in_directory with
-      | None -> get_search_path t
-      | Some expected_in_directory ->
-        expected_in_directory :: (get_search_path t)
-    in
+    let search_path = get_search_path t in
     match Misc.find_in_path_uncap search_path leafname with
     | exception Not_found -> None
     | pathname ->
@@ -84,6 +79,7 @@ let cache_type t ~type_expr ~env =
   let id = t.cached_type_counter in
   t.cached_type_counter <- t.cached_type_counter + 1;
   assert (not (Hashtbl.mem t.cached_types id));
+  let type_expr = Ctype.correct_levels type_expr in
   Hashtbl.replace t.cached_types id (type_expr, env);
   "__ocamlcached " ^ string_of_int id
 

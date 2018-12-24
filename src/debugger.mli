@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -160,17 +160,42 @@ module type S_base = sig
     -> use_previous_line_number_if_on_boundary:bool
     -> (string * (int option)) option
 
-  (** The list of compilation directories referenced in the DWARF information
-      of the given source file. *)
-  val compilation_directories_for_source_file
-     : source_filename:string
-    -> string list
+  type ocaml_specific_compilation_unit_info = private {
+    compiler_version : string;
+    config_digest : Digest.t;
+    prefix_name : string;
+  }
 
-  (** Attempt to resolve a name (e.g. the name of a parameter or
-      let-bound variable) to a value and its DWARF type. *)
+  (** Extract values for the given compilation unit that are transmitted via
+      OCaml-specific DWARF attributes. *)
+  val ocaml_specific_compilation_unit_info
+     : unit_name:Ident.t
+    -> ocaml_specific_compilation_unit_info option
+
+  (** Add the given directory to the front of the debugger's search path
+      (to be used for [find_and_open], below). *)
+  val add_search_path : dirname:string -> unit
+
+  (** Find and open the file by the name of [filename] expected to be in
+      directory [dirname]. A channel and the resolved filename is returned.
+
+      This function applies the various search path rules, potentially including
+      substitution rules, of the debugger. The file in question might be a
+      source file or compilation artifact. The user is responsible for closing
+      the channel.
+  *)
+  val find_and_open
+     : filename:string
+    -> dirname:string option
+    -> (string * in_channel) option
+
   type find_named_value_result =
     | Not_found
     | Found of Obj.t * string
+
+  (** Attempt to resolve a name (e.g. the name of a parameter or
+      let-bound variable) to a value and its DWARF type. *)
+  (* CR mshinwell: This doesn't seem useful *)
   val find_named_value : name:string -> find_named_value_result
 
   (** Attempt to resolve a name to a global symbol (e.g. one corresponding
@@ -246,6 +271,7 @@ module type S = sig
     (** Assuming that [t] is an integer, return which integer it is.
         Returns [None] if [t] is a pointer to something in the debugger's
         address space. *)
+    (* CR mshinwell: This should return the integer in the second case, no? *)
     val int : t -> int option
 
     (** Assuming that [t] has the layout of a value with tag [String_tag],

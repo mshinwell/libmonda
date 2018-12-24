@@ -79,17 +79,26 @@ SRC=src/monda_debug.ml \
     src/type_oracle.ml \
     src/type_helper.mli \
     src/type_helper.ml \
+    src/value_copier.mli \
+    src/value_copier.ml \
     src/value_printer.mli \
     src/value_printer.ml \
     src/follow_path.mli \
     src/follow_path.ml
 
-LIBMONDA_GDB=libmonda_gdb.so
+# libmonda is versioned according to the compiler version and digest of its
+# static configuration parameters.
 
-all: $(GDB_BACKEND) $(SRC)
+src/our_name: src/our_name.ml
+	$(OCAMLOPT) -o src/our_name src/our_name.ml
+
+src/our_name.out: src/our_name
+	src/our_name
+
+all: $(GDB_BACKEND) $(SRC) src/our_name.out
 	$(CC) -c -o gdb_backend/to_gdb.o gdb_backend/to_gdb.c
 	$(CC) -c -o gdb_backend/from_gdb.o gdb_backend/from_gdb.c
-	$(OCAMLOPT) -output-obj -g -o $(LIBMONDA_GDB) \
+	$(OCAMLOPT) -output-obj -g -o $(shell cat src/our_name.out)_gdb.so \
 	  ocamlcommon.cmxa ocamloptcomp.cmxa dynlink.cmxa bigarray.cmxa \
 	  $(SRC) $(GDB_BACKEND) gdb_backend/to_gdb.o \
           gdb_backend/from_gdb.o
@@ -97,5 +106,5 @@ all: $(GDB_BACKEND) $(SRC)
 .PHONY: clean
 clean: 
 	@rm -f gdb_backend/*.cm? gdb_backend/*.cm?? gdb_backend/*.o
-	@rm -f src/*.cm? src/*.cm?? src/*.o
+	@rm -f src/*.cm? src/*.cm?? src/*.o src/our_name.out src/our_name
 	@rm -f $(LIBMONDA)
