@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -27,15 +27,18 @@
 (*                                                                         *)
 (***************************************************************************)
 
-let cmt_cache = Cmt_cache.create ()
-
 module Gdb_debugger_with_traversal = Unified_value_traversal.Make (Gdb_debugger)
 
-module Follow_path = Follow_path.Make (Gdb_debugger_with_traversal)
-module Our_value_printer = Value_printer.Make (Gdb_debugger_with_traversal)
+module Load_path = Load_path.Make (Gdb_debugger_with_traversal)
+module Cmt_cache = Cmt_cache.Make (Load_path)
+module Follow_path = Follow_path.Make (Gdb_debugger_with_traversal) (Cmt_cache)
+module Value_printer =
+  Value_printer.Make (Gdb_debugger_with_traversal) (Cmt_cache)
+
+let cmt_cache = Cmt_cache.create ()
 
 let follow_path = Follow_path.create ~cmt_cache
-let value_printer = Our_value_printer.create ~cmt_cache
+let value_printer = Value_printer.create ~cmt_cache
 
 let split_search_path path =
   String.split_on_char ':' path
@@ -70,7 +73,7 @@ Format.eprintf "From_gdb_ocaml.print_value OVP starting.  Scrutinee %a.  \
   is_synthetic;
 *)
     let formatter = Gdb_debugger.formatter stream in
-    Our_value_printer.print value_printer
+    Value_printer.print value_printer
       ~scrutinee
       ~formatter
       ~dwarf_type

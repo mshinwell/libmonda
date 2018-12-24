@@ -46,7 +46,7 @@ external caml_copy_double
    : (float [@unboxed])
   -> float
   = "_native_only" "caml_copy_double"
-external caml_copy_string : addr:int -> bytes = "caml_copy_string"
+(*external caml_copy_string : addr:int -> bytes = "caml_copy_string"*)
 
 type out_of_heap_buffer = private int
 
@@ -330,10 +330,12 @@ module Synthetic_ptr = struct
       ~offset_in_bits:0
       ~length_in_bits:Sys.word_size) <> 0
 
+(*
   external value_as_long
      : (t [@unboxed])
     -> (nativeint [@unboxed])
     = "_native_only" "monda_value_as_long" [@@noalloc]
+*)
 
   (* N.B. [monda_value_struct_elt] does [value_ind] (which can handle implicit
      pointers) before looking up the field name in the resulting struct. *)
@@ -473,7 +475,9 @@ let find_global_symbol =
 
 type stream = Gdb.Ui_file.t
 
+(*
 exception Debugger_formatter_stopped
+*)
 
 let formatter (stream : stream) =
   Format.make_formatter (fun str pos len ->
