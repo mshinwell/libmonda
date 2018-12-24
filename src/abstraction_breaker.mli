@@ -27,13 +27,15 @@
 (*                                                                        *)
 (**************************************************************************)
 
-type t
+module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) : sig
+  type t
 
-val create : cmt_cache:Cmt_cache.t -> t
+  val create : cmt_cache:Cmt_cache.t -> t
 
-val find_manifest_of_abstract_type
-   : t
-  -> formatter:Format.formatter
-  -> path:Path.t
-  -> env:Env.t
-  -> (Path.t * Types.type_declaration * Env.t) option
+  val find_manifest_of_abstract_type
+     : t
+    -> formatter:Format.formatter
+    -> path:Path.t
+    -> env:Env.t
+    -> (Path.t * Types.type_declaration * Env.t) option
+end

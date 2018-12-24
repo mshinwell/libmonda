@@ -138,7 +138,7 @@ monda_val_print (struct type* type, int embedded_offset, CORE_ADDR address,
       {
       v_type = caml_copy_string(TYPE_NAME(type) == NULL ? "" : TYPE_NAME(type));
       v_stream = caml_copy_int64((uint64_t) stream);
-      v_search_path = caml_copy_string(search_path ? search_path : "");
+      v_search_path = caml_copy_string("");  /* CR mshinwell: remove */
       v_val = caml_copy_nativeint((intnat) val);
 
       /* N.B. [Store_field] must not be used on [args]! */
@@ -228,7 +228,7 @@ printf("monda_evaluate '%s'\n", expr);fflush(stdout);
      here. */
   v_stream = caml_copy_int64((uint64_t) 2);
 
-  v_search_path = caml_copy_string(search_path ? search_path : "");
+  v_search_path = caml_copy_string("");  /* CR mshinwell: remove */
 
   v_result = caml_callback3(*cb, v_expr, v_search_path, v_stream);
 

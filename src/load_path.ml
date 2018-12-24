@@ -27,25 +27,53 @@
 (*                                                                         *)
 (***************************************************************************)
 
-(** Printer for OCaml values guided by data from the heap and .cmt files. *)
+[@@@ocaml.warning "+a-4-30-40-41-42"]
 
-module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) : sig
-  type t
+module String = Misc.Stdlib.String
 
-  val create
-     : cmt_cache:Cmt_cache.t
-    -> t
+module Make (D : Debugger.S) = struct
+  let our_load_path = ref String.Set.empty
 
-  val print
-     : t
-    -> scrutinee:D.Value.t
-    -> dwarf_type:string
-    -> summary:bool
-    -> max_depth:int
-    -> max_string_length:int
-    -> cmt_file_search_path:string list
-    -> formatter:Format.formatter
-    -> only_print_short_type:bool
-    -> only_print_short_value:bool
-    -> unit
+  let add_to_load_path new_dirnames =
+    let new_dirnames =
+      List.filter (fun dirname -> not (String.Set.mem dirname !our_load_path))
+        new_dirnames
+    in
+    List.iter (fun dirname ->
+        D.add_search_path ~dirname;
+        our_load_path := String.Set.add dirname !our_load_path)
+      (List.rev new_dirnames)
+
+  let load_cmi ~unit_name =
+    let filename = unit_name ^ ".cmi" in
+    match D.find_and_open ~filename ~dirname:None with
+    | None -> None
+    | Some (filename, chan) ->
+      let cmi = Cmi_format.read_cmi_from_channel ~filename chan in
+      Some ({
+        filename;
+        cmi;
+      } : Env.Persistent_signature.t)
+
+  let () =
+    Env.Persistent_signature.load := load_cmi
+
+  let load_cmt compilation_unit =
+    let unit_name = Compilation_unit.get_persistent_ident compilation_unit in
+    match D.ocaml_specific_compilation_unit_info ~unit_name with
+    | None -> None
+    | Some { prefix_name; _ } ->
+      let filename = (Filename.basename prefix_name) ^ ".cmt" in
+      let dirname = Filename.dirname prefix_name in
+      match D.find_and_open ~filename ~dirname:(Some dirname) with
+      | None -> None
+      | Some (filename, cmt_chan) ->
+        let cmt =
+          Cmt_file.load_from_channel_then_close ~filename cmt_chan
+        in
+        match cmt with
+        | None -> None
+        | Some cmt ->
+          add_to_load_path (Cmt_file.load_path cmt);
+          Some cmt
 end

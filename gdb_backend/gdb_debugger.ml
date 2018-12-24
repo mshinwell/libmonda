@@ -159,7 +159,7 @@ module Gdb_indirect = struct
 
   external find_and_open
      : filename:string
-     : dirname:string
+    -> dirname:string option
     -> (string * Unix.file_descr) option
     = "monda_find_and_open"
 
@@ -395,9 +395,9 @@ module Synthetic_ptr = struct
 end
 
 let symbol_at_pc pc =
-  let function_name = caml_stat_alloc 8 in
-  let func_start = caml_stat_alloc 8 in
-  let func_end = caml_stat_alloc 8 in
+  let function_name = caml_stat_alloc ~bytes:8 in
+  let func_start = caml_stat_alloc ~bytes:8 in
+  let func_end = caml_stat_alloc ~bytes:8 in
   let result =
     Gdb.find_pc_partial_function ~addr:pc ~function_name
       ~func_start ~func_end
@@ -414,6 +414,8 @@ let symbol_at_pc pc =
   match result with
   | None -> None
   | Some result -> Some (Bytes.to_string result)
+
+let add_search_path = Gdb_indirect.add_search_path
 
 type ocaml_specific_compilation_unit_info = {
   compiler_version : string;
@@ -432,7 +434,7 @@ let ocaml_specific_compilation_unit_info ~unit_name
     match unit_info.config_digest with
     | None -> None
     | Some digest ->
-      match Digest.of_hex unit_info.config_digest with
+      match Digest.from_hex digest with
       | exception (Invalid_argument _) -> None
       | digest -> Some digest
   in
@@ -444,16 +446,18 @@ let ocaml_specific_compilation_unit_info ~unit_name
   with
   | Some compiler_version, Some unit_name, Some config_digest,
       Some prefix_name ->
-    { compiler_version;
+    Some {
+      compiler_version;
       unit_name = Ident.create_persistent unit_name;
       config_digest;
+      prefix_name;
     }
   | _, _, _, _ -> None
 
 let find_and_open ~filename ~dirname =
   match Gdb_indirect.find_and_open ~filename ~dirname with
   | None -> None
-  | Some (filename, fd) -> Some (filename, Unix.in_channel_of_descr)
+  | Some (filename, fd) -> Some (filename, Unix.in_channel_of_descr fd)
 
 let filename_and_line_number_of_pc addr
       ~use_previous_line_number_if_on_boundary =

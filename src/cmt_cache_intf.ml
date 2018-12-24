@@ -27,47 +27,17 @@
 (*                                                                        *)
 (**************************************************************************)
 
-module Make (LP : Load_path_intf.S) = struct
-  type t = {
-    cache : Cmt_file.t Compilation_unit.Tbl.t;
-    mutable cached_type_counter : int;
-    cached_types : (int, Types.type_expr * Env.t) Hashtbl.t;
-  }
+module type S = sig
+  type t
 
-  let create () =
-    { cache = Compilation_unit.Tbl.create 42;
-      cached_type_counter = 0;
-      cached_types = Hashtbl.create 42;
-    }
+  val create : unit -> t
 
-  let load t comp_unit =
-    match Compilation_unit.Tbl.find t.cache comp_unit with
-    | exception Not_found ->
-      begin match LP.load_cmt comp_unit with
-      | None -> None
-      | Some cmt ->
-        Compilation_unit.Tbl.add t.cache comp_unit cmt;
-        Some cmt
-      end
-    | cmt -> Some cmt
+  val load : t -> Compilation_unit.t -> Cmt_file.t option
 
-  let cache_type t ~type_expr ~env =
-    let id = t.cached_type_counter in
-    t.cached_type_counter <- t.cached_type_counter + 1;
-    assert (not (Hashtbl.mem t.cached_types id));
-    let type_expr = Ctype.correct_levels type_expr in
-    Hashtbl.replace t.cached_types id (type_expr, env);
-    "__ocamlcached " ^ string_of_int id
+  val cache_type : t -> type_expr:Types.type_expr -> env:Env.t -> string
 
-  let find_cached_type t ~cached_type =
-    match String.split_on_char ' ' cached_type with
-    | ["__ocamlcached"; id] ->
-      begin match int_of_string id with
-      | exception _ -> None
-      | id ->
-        match Hashtbl.find t.cached_types id with
-        | exception _ -> None
-        | type_expr_and_env -> Some type_expr_and_env
-      end
-    | _ -> None
+  val find_cached_type
+     : t
+    -> cached_type:string
+    -> (Types.type_expr * Env.t) option
 end

@@ -34,10 +34,12 @@ module Variant_kind = Type_oracle.Variant_kind
 
 let debug = Monda_debug.debug
 
-module Make (D : Debugger.S) = struct
-  module Our_type_oracle = Type_oracle.Make (D)
+module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
+  (* CR mshinwell: Remove "our" *)
+  module Our_type_oracle = Type_oracle.Make (D) (Cmt_cache)
   module V = D.Value
   module Our_value_copier = Value_copier.Make (D)
+  module Type_helper = Type_helper.Make (D) (Cmt_cache)
 
   type t = {
     type_oracle : Our_type_oracle.t;
@@ -708,8 +710,9 @@ module Make (D : Debugger.S) = struct
     | Custom -> Format.fprintf formatter "custom"
     | Unknown -> Format.fprintf formatter "unknown"
 
+  (* CR mshinwell: remove search path param *)
   let print t ~scrutinee ~dwarf_type ~summary ~max_depth ~max_string_length
-        ~cmt_file_search_path ~formatter ~only_print_short_type
+        ~cmt_file_search_path:_ ~formatter ~only_print_short_type
         ~only_print_short_value =
     if debug then begin
       Format.printf "Value_printer.print %a type %s\n%!"
@@ -720,7 +723,7 @@ module Make (D : Debugger.S) = struct
       | Some type_expr_and_env -> Some type_expr_and_env
       | None ->
         Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
-          ~cmt_cache:t.cmt_cache ~cmt_file_search_path
+          ~cmt_cache:t.cmt_cache
     in
     (* CR mshinwell: Do this for the [format] type as well *)
     let is_unit =

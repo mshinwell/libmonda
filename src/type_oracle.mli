@@ -78,7 +78,7 @@ module Result : sig
   val to_string : t -> string
 end
 
-module Make (D : Debugger.S) : sig
+module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) : sig
   type t
 
   val create

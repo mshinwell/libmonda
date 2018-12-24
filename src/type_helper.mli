@@ -29,7 +29,7 @@
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
-module Make (D : Debugger.S) : sig
+module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) : sig
   val type_expr_and_env_from_dwarf_type
      : dwarf_type:string
     -> cmt_cache:Cmt_cache.t

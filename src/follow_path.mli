@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2016 Jane Street Group, LLC                              *)
+(*  Copyright (c) 2016--2018 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -30,7 +30,7 @@
 (** Evaluate a path specified by the user (e.g. "t.field1.(0)"), to find a
     value. *)
 
-module Make (D : Debugger.S) : sig
+module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) : sig
   type t
 
   val create : cmt_cache:Cmt_cache.t -> t

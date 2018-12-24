@@ -4,7 +4,7 @@
 (*                                                                        *)
 (*                  Mark Shinwell, Jane Street Europe                     *)
 (*                                                                        *)
-(* Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
+(* Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
 (*                                                                        *)
 (* Permission is hereby granted, free of charge, to any person obtaining  *)
 (* a copy of this software and associated documentation files             *)
@@ -27,25 +27,4 @@
 (*                                                                        *)
 (**************************************************************************)
 
-type t
-
-val create : unit -> t
-
-val clear_search_paths : t -> unit
-
-val set_primary_search_path : t -> string list -> unit
-val set_secondary_search_path : t -> string list -> unit
-
-val get_primary_search_path : t -> string list
-val get_search_path : t -> string list
-
-val load
-   : t
-  -> leafname:string
-  -> Cmt_file.t option
-
-val cache_type : t -> type_expr:Types.type_expr -> env:Env.t -> string
-val find_cached_type
-   : t
-  -> cached_type:string
-  -> (Types.type_expr * Env.t) option
+module Make (LP : Load_path_intf.S) : Cmt_cache_intf.S

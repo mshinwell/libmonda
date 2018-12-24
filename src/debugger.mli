@@ -162,6 +162,7 @@ module type S_base = sig
 
   type ocaml_specific_compilation_unit_info = private {
     compiler_version : string;
+    unit_name : Ident.t;
     config_digest : Digest.t;
     prefix_name : string;
   }

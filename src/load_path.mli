@@ -27,25 +27,11 @@
 (*                                                                         *)
 (***************************************************************************)
 
-(** Printer for OCaml values guided by data from the heap and .cmt files. *)
+[@@@ocaml.warning "+a-4-30-40-41-42"]
 
-module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) : sig
-  type t
+(** Management of .cmi and .cmt load paths in conjunction with the debugger.
 
-  val create
-     : cmt_cache:Cmt_cache.t
-    -> t
+    See load_path_intf.ml for the path searching strategy.
+    The [Make] functor is side-effecting and should only be applied once. *)
 
-  val print
-     : t
-    -> scrutinee:D.Value.t
-    -> dwarf_type:string
-    -> summary:bool
-    -> max_depth:int
-    -> max_string_length:int
-    -> cmt_file_search_path:string list
-    -> formatter:Format.formatter
-    -> only_print_short_type:bool
-    -> only_print_short_value:bool
-    -> unit
-end
+module Make (D : Debugger.S) : Load_path_intf.S

@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2016 Jane Street Group, LLC                              *)
+(*  Copyright (c) 2016--2018 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -29,8 +29,9 @@
 
 [@@@ocaml.warning "+a-4-9-30-40-41-42"]
 
-module Make (D : Debugger.S) = struct
-  module Our_type_oracle = Type_oracle.Make (D)
+module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
+  module Our_type_oracle = Type_oracle.Make (D) (Cmt_cache)
+  module Type_helper = Type_helper.Make (D) (Cmt_cache)
 
   type t = {
     type_oracle : Our_type_oracle.t;
@@ -278,14 +279,15 @@ module Make (D : Debugger.S) = struct
       find_component ~path ~type_expr ~previous_was_mutable:false
         ~address_of_v:None ~env v
 
+  (* CR mshinwell: Remove search path arg *)
   let evaluate t ~path ~lvalue_or_rvalue ~must_be_mutable
-        ~cmt_file_search_path ~formatter =
+        ~cmt_file_search_path:_ ~formatter =
     (* CR mshinwell: When in function Foo.f then we should search for "Foo.bar"
        when looking for "bar", if it isn't a local or arg. *)
     let found ~starting_point ~dwarf_type ~rest_of_path =
       let type_expr_and_env =
         Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
-          ~cmt_cache:t.cmt_cache ~cmt_file_search_path
+          ~cmt_cache:t.cmt_cache
       in
       evaluate_given_starting_point t ~path:rest_of_path
         ~type_expr_and_env ~lvalue_or_rvalue ~must_be_mutable

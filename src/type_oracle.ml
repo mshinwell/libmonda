@@ -104,8 +104,10 @@ module Result = struct
     | Unknown -> "Unknown"
 end
 
-module Make (D : Debugger.S) = struct
+module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
   module V = D.Value
+
+  module Abstraction_breaker = Abstraction_breaker.Make (D) (Cmt_cache)
 
   type maybe_boxed = Unboxed of V.t | Boxed of V.t | Absent
 
@@ -351,10 +353,6 @@ module Make (D : Debugger.S) = struct
         V.print scrutinee
         (match type_expr_and_env with None -> "no" | Some _ -> "yes")
     end;
-    let load_path = !Config.load_path in
-    (* The load path is set here because we may call [Env] functions
-       that try to load .cmt files (e.g. [Env.find_type]). *)
-    Config.load_path := Cmt_cache.get_search_path t.cmt_cache;
     let absent = V.is_null scrutinee in
     let result : Result.t =
       try
@@ -395,6 +393,5 @@ module Make (D : Debugger.S) = struct
       Printf.printf "find_type_information returning %s\n%!"
         (Result.to_string result)
     end;
-    Config.load_path := load_path;
     result
 end

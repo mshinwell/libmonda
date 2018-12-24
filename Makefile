@@ -66,13 +66,17 @@ GDB_BACKEND=gdb_backend/gdb_debugger.mli \
 SRC=src/monda_debug.ml \
     src/cmt_file.mli \
     src/cmt_file.ml \
+    src/debugger.mli \
+    src/load_path_intf.ml \
+    src/load_path.mli \
+    src/load_path.ml \
+    src/cmt_cache_intf.ml \
     src/cmt_cache.mli \
     src/cmt_cache.ml \
     src/naming_conventions.mli \
     src/naming_conventions.ml \
     src/abstraction_breaker.mli \
     src/abstraction_breaker.ml \
-    src/debugger.mli \
     src/unified_value_traversal.mli \
     src/unified_value_traversal.ml \
     src/type_oracle.mli \
@@ -89,19 +93,21 @@ SRC=src/monda_debug.ml \
 # libmonda is versioned according to the compiler version and digest of its
 # static configuration parameters.
 
+_DEFAULT: all
+
 src/our_name: src/our_name.ml
-	$(OCAMLOPT) -o src/our_name src/our_name.ml
+	$(OCAMLOPT) -o src/our_name ocamlcommon.cmxa src/our_name.ml
 
 src/our_name.out: src/our_name
-	src/our_name
+	src/our_name > src/our_name.out
 
 all: $(GDB_BACKEND) $(SRC) src/our_name.out
 	$(CC) -c -o gdb_backend/to_gdb.o gdb_backend/to_gdb.c
 	$(CC) -c -o gdb_backend/from_gdb.o gdb_backend/from_gdb.c
 	$(OCAMLOPT) -output-obj -g -o $(shell cat src/our_name.out)_gdb.so \
-	  ocamlcommon.cmxa ocamloptcomp.cmxa dynlink.cmxa bigarray.cmxa \
+	  ocamlcommon.cmxa ocamloptcomp.cmxa dynlink.cmxa bigarray.cmxa unix.cmxa \
 	  $(SRC) $(GDB_BACKEND) gdb_backend/to_gdb.o \
-          gdb_backend/from_gdb.o
+    gdb_backend/from_gdb.o
 
 .PHONY: clean
 clean: 

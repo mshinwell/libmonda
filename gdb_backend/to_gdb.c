@@ -52,6 +52,7 @@
 #include "varobj.h"
 #include "stack.h"
 #include "source.h"
+#include "objfiles.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -133,18 +134,22 @@ extern "C" caml_value
 monda_add_search_path(caml_value v_dirname)
 {
   add_path(String_val(v_dirname), &source_path, 0);
+  return Val_unit;
 }
 
 extern "C" caml_value
-monda_find_and_open(caml_value v_filename, caml_value v_dirname)
+monda_find_and_open(caml_value v_filename, caml_value v_dirname_opt)
 {
-  CAMLparam2(v_filename, v_dirname);
+  CAMLparam2(v_filename, v_dirname_opt);
   CAMLlocal2(v_fullname_and_fd, v_some);
 
   int result;
   gdb::unique_xmalloc_ptr<char> fullname;
 
-  result = find_and_open_source (String_val(v_filename), String_val(v_dirname),
+  result = find_and_open_source (String_val(v_filename),
+                                 Is_block(v_dirname_opt)
+                                   ? String_val(Field(v_dirname_opt, 0))
+                                   : NULL,
                                  &fullname);
 
   if (result == -1)
@@ -154,7 +159,7 @@ monda_find_and_open(caml_value v_filename, caml_value v_dirname)
     }
 
   v_fullname_and_fd = caml_alloc(2, 0);
-  Store_field(v_fullname_and_fd, 0, caml_copy_string(fullname));
+  Store_field(v_fullname_and_fd, 0, caml_copy_string(fullname.get()));
   Store_field(v_fullname_and_fd, 1, Val_long(result));
 
   v_some = caml_alloc_small(1, 0 /* Some */);
@@ -215,7 +220,7 @@ monda_ocaml_specific_compilation_unit_info(caml_value v_unit_name)
   ALL_COMPUNITS(objfile, cu) {
     if (cu->ocaml.unit_name != NULL
           && strcmp(cu->ocaml.unit_name, String_val(v_unit_name)) == 0) {
-      v_comp_unit_info = build_ocaml_specific_compilation_unit_info(&cu);
+      v_comp_unit_info = build_ocaml_specific_compilation_unit_info(cu);
       v_some_comp_unit_info = caml_alloc_small(1, 0 /* Some */);
       Field(v_some_comp_unit_info, 0) = v_comp_unit_info;
       CAMLreturn(v_some_comp_unit_info);

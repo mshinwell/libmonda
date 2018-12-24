@@ -52,8 +52,7 @@ end
 module T = Typedtree
 
 type t = {
-  cmi_infos : Cmi_format.cmi_infos option;
-  cmt_infos : Cmt_format.cmt_infos option;
+  cmt_infos : Cmt_format.cmt_infos;
   (* CR mshinwell: we can almost certainly do better than a map from
       every identifier (at least in common cases). *)
   (* CR trefis for mshinwell: in ocp-index, they use a trie from names to
@@ -304,82 +303,72 @@ let load_path_from_cmt_infos (cmt_infos : Cmt_format.cmt_infos) =
       Filename.concat cmt_infos.Cmt_format.cmt_builddir leaf
     else leaf)
 
-let load_path t =
-  match t.cmt_infos with
-  | None -> []
-  | Some cmt_infos -> load_path_from_cmt_infos cmt_infos
+let load_path t = load_path_from_cmt_infos t.cmt_infos
 
-let load ~pathname =
-  if debug then Printf.printf "attempting to load cmt file: %s\n%!" pathname;
-  match Cmt_format.read pathname with
-  | exception (Sys_error _) -> None
-  | cmi_infos, cmt_infos ->
-    let idents_to_types, _application_points =
-      match cmt_infos with
-      | None -> String.Map.empty, LocTable.empty
-      | Some cmt_infos ->
-        let idents, app_points = create_idents_to_types_map ~cmt_infos in
-        try
-          let idents =
-            String.Map.map (fun (type_expr, env) ->
-              type_expr, Env.env_of_only_summary Envaux.env_from_summary env
-            ) idents
-          in
-          let app_points =
-            LocTable.map (fun (type_expr, env) ->
-              type_expr, Env.env_of_only_summary Envaux.env_from_summary env
-            ) app_points
-          in
-          let distinguished_ident =
-            let ident = ref None in
-            String.Map.iter
-              (fun candidate type_expr_and_env -> 
-                try
-                  if String.sub candidate 0 (String.length distinguished_var_name)
-                    = distinguished_var_name
-                  then begin
-                    ident := Some (candidate, type_expr_and_env)
-                  end
-                with _exn -> ())
-              idents;
-            !ident
-          in
-          let idents =
-            (* CR mshinwell: work out a proper solution to this problem *)
-            match distinguished_ident with
-            | None -> idents
-            | Some (_ident, type_expr_and_env) ->
-              String.Map.add distinguished_var_name type_expr_and_env idents
-          in
-          idents, app_points
-        with
-        | Envaux.Error (Envaux.Module_not_found path) ->
-          begin if debug then begin
-            Printf.printf "cmt load failed: module '%s' missing, load path: %s\n%!"
-              (Path.name path)
-              (String.concat "," !Config.load_path)
-          end;
-          String.Map.empty, LocTable.empty
-          end
-        | exn -> begin
-          if debug then
-            Printf.printf "exception whilst reading cmt file(s): %s\n%!"
-              (Printexc.to_string exn);
-          String.Map.empty, LocTable.empty
-        end
-    in
-    let t =
-      { cmi_infos;
-        cmt_infos;
-        idents_to_types;
-      }
-    in
-    Some t
+let load_from_channel_then_close ~filename chan =
+  if debug then Printf.printf "attempting to load cmt file: %s\n%!" filename;
+  let cmt_infos = Cmt_format.read_cmt_from_channel ~filename chan in
+  let idents_to_types, _application_points =
+    let idents, app_points = create_idents_to_types_map ~cmt_infos in
+    try
+      let idents =
+        String.Map.map (fun (type_expr, env) ->
+          type_expr, Env.env_of_only_summary Envaux.env_from_summary env
+        ) idents
+      in
+      let app_points =
+        LocTable.map (fun (type_expr, env) ->
+          type_expr, Env.env_of_only_summary Envaux.env_from_summary env
+        ) app_points
+      in
+      let distinguished_ident =
+        let ident = ref None in
+        String.Map.iter
+          (fun candidate type_expr_and_env -> 
+            try
+              if String.sub candidate 0 (String.length distinguished_var_name)
+                = distinguished_var_name
+              then begin
+                ident := Some (candidate, type_expr_and_env)
+              end
+            with _exn -> ())
+          idents;
+        !ident
+      in
+      let idents =
+        (* CR mshinwell: work out a proper solution to this problem *)
+        match distinguished_ident with
+        | None -> idents
+        | Some (_ident, type_expr_and_env) ->
+          String.Map.add distinguished_var_name type_expr_and_env idents
+      in
+      idents, app_points
+    with
+    | Envaux.Error (Envaux.Module_not_found path) ->
+      begin if debug then begin
+        Printf.printf "cmt load failed: module '%s' missing, load path: %s\n%!"
+          (Path.name path)
+          (String.concat "," !Config.load_path)
+      end;
+      String.Map.empty, LocTable.empty
+      end
+    | exn -> begin
+      if debug then
+        Printf.printf "exception whilst reading cmt file(s): %s\n%!"
+          (Printexc.to_string exn);
+      String.Map.empty, LocTable.empty
+    end
+  in
+  let t =
+    { cmt_infos;
+      idents_to_types;
+    }
+  in
+  Some t
 
-  let type_of_ident t ~name ~stamp =
-    let unique_name = Printf.sprintf "%s_%d" name stamp in
-    try Some (String.Map.find unique_name t.idents_to_types)
-    with Not_found -> None
+let type_of_ident t ~name ~stamp =
+  let unique_name = Printf.sprintf "%s_%d" name stamp in
+  try Some (String.Map.find unique_name t.idents_to_types)
+  with Not_found -> None
 
-let cmi_infos t = t.cmi_infos
 let cmt_infos t = t.cmt_infos
