@@ -95,7 +95,7 @@ SRC=src/monda_debug.ml \
 
 _DEFAULT: all
 
-src/our_name: src/our_name.ml
+src/our_name: src/our_name.ml $(OCAML_ROOT)/bin/ocamlopt
 	$(OCAMLOPT) -o src/our_name ocamlcommon.cmxa src/our_name.ml
 
 src/our_name.out: src/our_name
