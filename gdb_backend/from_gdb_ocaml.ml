@@ -53,7 +53,7 @@ let print_value is_synthetic
      at.  Since we can't yet print out-of-heap values etc, don't try to
      be fancy here. *)
   let can_print =
-    Name_laundry.split_base_type_die_name dwarf_type <> None
+    Dwarf_name_laundry.split_base_type_die_name dwarf_type <> None
       || Cmt_cache.find_cached_type cmt_cache ~cached_type:dwarf_type
            <> None
   in

@@ -32,11 +32,11 @@
 module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
   let type_expr_and_env_from_dwarf_type ~dwarf_type ~cmt_cache =
     let cmt_file_and_ident_name =
-      match Name_laundry.split_base_type_die_name dwarf_type with
+      match Dwarf_name_laundry.split_base_type_die_name dwarf_type with
       | None -> None
       | Some { compilation_unit; ident_name; ident_stamp; } ->
         let compilation_unit =
-          (* CR mshinwell: move to [Name_laundry] *)
+          (* CR mshinwell: move to [Dwarf_name_laundry] *)
           Compilation_unit.create (Ident.create_persistent compilation_unit)
             (Linkage_name.create (
               Compilenv.make_symbol ~unitname:compilation_unit None))
