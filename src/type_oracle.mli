@@ -49,6 +49,7 @@ module Result : sig
     | Obj_boxed_not_traversable
     | Obj_unboxed
     | Obj_unboxed_but_should_be_boxed
+    | Unit
     | Abstract of Path.t
     | Array of Types.type_expr * Env.t
     | List of Types.type_expr * Env.t

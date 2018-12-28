@@ -41,11 +41,17 @@ module Make (D : Debugger.S) = struct
     in
     List.iter (fun dirname ->
         D.add_search_path ~dirname;
+        if Monda_debug.debug then begin
+          Format.eprintf "Adding %s to debugger's search path\n%!" dirname;
+        end;
         our_load_path := String.Set.add dirname !our_load_path)
       (List.rev new_dirnames)
 
   let load_cmi ~unit_name =
-    let filename = unit_name ^ ".cmi" in
+    let filename = (String.uncapitalize_ascii unit_name) ^ ".cmi" in
+    if Monda_debug.debug then begin
+      Format.eprintf "Trying to load .cmi file: %s\n%!" filename;
+    end;
     match D.find_and_open ~filename ~dirname:None with
     | None -> None
     | Some (filename, chan) ->
@@ -68,12 +74,6 @@ module Make (D : Debugger.S) = struct
       match D.find_and_open ~filename ~dirname:(Some dirname) with
       | None -> None
       | Some (filename, cmt_chan) ->
-        let cmt =
-          Cmt_file.load_from_channel_then_close ~filename cmt_chan
-        in
-        match cmt with
-        | None -> None
-        | Some cmt ->
-          add_to_load_path (Cmt_file.load_path cmt);
-          Some cmt
+        Cmt_file.load_from_channel_then_close ~filename cmt_chan
+          ~add_to_load_path
 end

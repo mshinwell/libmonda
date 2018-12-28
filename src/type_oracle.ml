@@ -50,6 +50,7 @@ module Result = struct
     (* CR mshinwell: naming *)
     | Obj_unboxed
     | Obj_unboxed_but_should_be_boxed
+    | Unit
     | Abstract of Path.t
     | Array of Types.type_expr * Env.t
     | List of Types.type_expr * Env.t
@@ -81,6 +82,7 @@ module Result = struct
     | Obj_boxed_not_traversable -> "Obj_boxed_not_traversable"
     | Obj_unboxed -> "Obj_unboxed"
     | Obj_unboxed_but_should_be_boxed -> "Obj_unboxed_but_should_be_boxed"
+    | Unit -> "Unit"
     | Abstract _ -> "Abstract"
     | Array _ -> "Array"
     | List _ -> "List"
@@ -163,6 +165,10 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     else if Path.same path Predef.path_char then
       match scrutinee with
       | Unboxed _ | Absent -> Some Char
+      | Boxed _ -> Some Obj_boxed_traversable  (* should not be boxed *)
+    else if Path.same path Predef.path_unit then
+      match scrutinee with
+      | Unboxed _ | Absent -> Some Unit
       | Boxed _ -> Some Obj_boxed_traversable  (* should not be boxed *)
     else if Path.same path format6_path then
       match scrutinee with

@@ -35,7 +35,11 @@ type t
 
 (** Load a .cmt file from the given input channel.  The [filename] is only
     used for error reporting. *)
-val load_from_channel_then_close : filename:string -> in_channel -> t option
+val load_from_channel_then_close
+   : filename:string
+  -> in_channel
+  -> add_to_load_path:(string list -> unit)
+  -> t option
 
 (** Find the type and environment of definition of the given identifier by
     looking through a .cmt file.  The [name] and [stamp] will typically be
@@ -50,5 +54,3 @@ val type_of_ident
 val distinguished_var_name : string
 
 val cmt_infos : t -> Cmt_format.cmt_infos
-
-val load_path : t -> string list

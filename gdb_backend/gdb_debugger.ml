@@ -149,7 +149,7 @@ module Gdb_indirect = struct
 
   external raw_ocaml_specific_compilation_unit_info
      : unit_name:string
-    -> raw_ocaml_specific_compilation_unit_info
+    -> raw_ocaml_specific_compilation_unit_info option
     = "monda_ocaml_specific_compilation_unit_info"
 
   external add_search_path
@@ -432,29 +432,32 @@ let ocaml_specific_compilation_unit_info ~unit_name
   let unit_info =
     Gdb_indirect.raw_ocaml_specific_compilation_unit_info ~unit_name
   in
-  let config_digest =
-    match unit_info.config_digest with
-    | None -> None
-    | Some digest ->
-      match Digest.from_hex digest with
-      | exception (Invalid_argument _) -> None
-      | digest -> Some digest
-  in
-  match
-    unit_info.compiler_version,
-    unit_info.unit_name,
-    config_digest,
-    unit_info.prefix_name
-  with
-  | Some compiler_version, Some unit_name, Some config_digest,
-      Some prefix_name ->
-    Some {
-      compiler_version;
-      unit_name = Ident.create_persistent unit_name;
-      config_digest;
-      prefix_name;
-    }
-  | _, _, _, _ -> None
+  match unit_info with
+  | None -> None
+  | Some unit_info ->
+    let config_digest =
+      match unit_info.config_digest with
+      | None -> None
+      | Some digest ->
+        match Digest.from_hex digest with
+        | exception (Invalid_argument _) -> None
+        | digest -> Some digest
+    in
+    match
+      unit_info.compiler_version,
+      unit_info.unit_name,
+      config_digest,
+      unit_info.prefix_name
+    with
+    | Some compiler_version, Some unit_name, Some config_digest,
+        Some prefix_name ->
+      Some {
+        compiler_version;
+        unit_name = Ident.create_persistent unit_name;
+        config_digest;
+        prefix_name;
+      }
+    | _, _, _, _ -> None
 
 let find_and_open ~filename ~dirname =
   match Gdb_indirect.find_and_open ~filename ~dirname with

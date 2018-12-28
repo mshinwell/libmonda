@@ -64,9 +64,11 @@ type t = {
 let rec process_pattern ~(pat : T.pattern) ~idents_to_types =
   match pat.pat_desc with
   | Tpat_var (ident, _loc) ->
+(*
     if debug then begin
       Printf.printf "process_pattern: Tpat_var %s\n%!" (Ident.unique_name ident)
     end;
+*)
     String.Map.add (Ident.unique_name ident)
       (pat.pat_type, pat.pat_env)
       idents_to_types
@@ -303,11 +305,10 @@ let load_path_from_cmt_infos (cmt_infos : Cmt_format.cmt_infos) =
       Filename.concat cmt_infos.Cmt_format.cmt_builddir leaf
     else leaf)
 
-let load_path t = load_path_from_cmt_infos t.cmt_infos
-
-let load_from_channel_then_close ~filename chan =
+let load_from_channel_then_close ~filename chan ~add_to_load_path =
   if debug then Printf.printf "attempting to load cmt file: %s\n%!" filename;
   let cmt_infos = Cmt_format.read_cmt_from_channel ~filename chan in
+  add_to_load_path (load_path_from_cmt_infos cmt_infos);
   let idents_to_types, _application_points =
     let idents, app_points = create_idents_to_types_map ~cmt_infos in
     try
@@ -346,9 +347,8 @@ let load_from_channel_then_close ~filename chan =
     with
     | Envaux.Error (Envaux.Module_not_found path) ->
       begin if debug then begin
-        Printf.printf "cmt load failed: module '%s' missing, load path: %s\n%!"
+        Printf.printf "cmt load failed: module '%s' missing\n%!"
           (Path.name path)
-          (String.concat "," !Config.load_path)
       end;
       String.Map.empty, LocTable.empty
       end
@@ -369,6 +369,9 @@ let load_from_channel_then_close ~filename chan =
 let type_of_ident t ~name ~stamp =
   let unique_name = Printf.sprintf "%s_%d" name stamp in
   try Some (String.Map.find unique_name t.idents_to_types)
-  with Not_found -> None
+  with Not_found -> begin
+    if debug then Printf.printf "type_of_ident failed\n%!";
+    None
+  end
 
 let cmt_infos t = t.cmt_infos

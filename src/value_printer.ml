@@ -109,14 +109,15 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
 
   let rec print_value t ~state ~type_of_ident:type_expr_and_env v : unit =
     let formatter = state.formatter in
+    let type_info =
+      Our_type_oracle.find_type_information t.type_oracle ~formatter
+        ~type_expr_and_env ~scrutinee:v
+    in
     if (state.summary && state.depth > 2)
         || state.depth > state.max_depth then begin
       Format.fprintf formatter ".."
     end else begin
-      match
-        Our_type_oracle.find_type_information t.type_oracle ~formatter
-          ~type_expr_and_env ~scrutinee:v
-      with
+      match type_info with
       | Obj_unboxed -> print_int t ~state v
       | Obj_unboxed_but_should_be_boxed ->
         (* One common case: a value that is usually boxed but for the moment is
@@ -142,6 +143,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           Format.fprintf formatter "<0x%nx, tag %d>" raw (V.tag_exn v)
         | None -> Format.fprintf formatter "<synthetic pointer>"
         end
+      | Unit -> Format.fprintf formatter "()"
       | Int ->
         begin match V.int v with
         | Some i -> Format.fprintf formatter "%d" i
@@ -176,7 +178,9 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | Unknown -> Format.fprintf formatter "unknown"
     end;
     if state.print_sig then begin
-      print_type_of_value t ~state ~type_expr_and_env
+      match type_info with
+      | Unit -> ()
+      | _ -> print_type_of_value t ~state ~type_expr_and_env
     end
 
   and generic_printer t ~state ?(separator = ",") ?prefix
@@ -587,7 +591,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
   and print_format6 _t ~state v =
     let formatter = state.formatter in
     let format_string : _ format6 = Our_value_copier.copy v in
-    Format.pp_print_string formatter (string_of_format format_string)
+    Format.fprintf formatter "%S" (string_of_format format_string)
 
   and print_custom_block _t ~state v =
     let formatter = state.formatter in
@@ -649,6 +653,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | None -> Format.fprintf formatter "unavailable"
       end
     | Char -> print_char t ~state v
+    | Unit -> Format.fprintf formatter "()"
     | Abstract _ -> Format.fprintf formatter "abstract"
     | Array _ -> Format.fprintf formatter "[| ... |]"
     | List _ when not (V.is_block v) && not (V.is_null v) ->
@@ -690,6 +695,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | None -> Format.fprintf formatter "int (?)"
       end
     | Char -> Format.fprintf formatter "char"
+    | Unit -> Format.fprintf formatter "unit"
     | Abstract _ -> Format.fprintf formatter "abstract"
     | Array _ -> Format.fprintf formatter "array"
     | List _ -> Format.fprintf formatter "list"
@@ -725,7 +731,6 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
           ~cmt_cache:t.cmt_cache
     in
-    (* CR mshinwell: Do this for the [format] type as well *)
     let is_unit =
       (* Print variables (in particular parameters) of type [unit] even when
          unavailable. *)
@@ -745,7 +750,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     then begin
       (* CR mshinwell: This should still return a type even when not in
          short-type mode, no? *)
-      Format.fprintf formatter "<optimized out 1>";
+      Format.fprintf formatter "<optimized out>";
       Format.pp_print_flush formatter ()
     end else begin
       if debug then Printf.printf "Value_printer.print entry point\n%!";
