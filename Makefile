@@ -32,10 +32,10 @@
 
 #GDB_ROOT=$(PREFIX)/libexec/gdb-ocaml.7.11/src
 #OCAML_ROOT=$(PREFIX)
-GDB_ROOT=/usr/local/home/mshinwell/mshinwell-gdb
-OCAML_ROOT=/usr/local/home/mshinwell/ocaml-gdb-pic-install
-#GDB_ROOT=/Users/mark/dev/mshinwell-gdb
-#OCAML_ROOT=/Users/mark/dev/mshinwell-ocaml3-install
+#GDB_ROOT=/usr/local/home/mshinwell/mshinwell-gdb
+#OCAML_ROOT=/usr/local/home/mshinwell/ocaml-gdb-pic-install
+GDB_ROOT=/Users/mark/dev/mshinwell-gdb
+OCAML_ROOT=/Users/mark/dev/mshinwell-ocaml3-install
 
 OCAMLOPT=$(OCAML_ROOT)/bin/ocamlopt -verbose -I +compiler-libs -I ./src \
   -g -fPIC -I ./gdb_backend
@@ -44,53 +44,54 @@ OCAMLOPT=$(OCAML_ROOT)/bin/ocamlopt -verbose -I +compiler-libs -I ./src \
 # requirement for reading from the gdb build tree.
 
 # Linux
-CC=g++ -x c++ -std=gnu++11 -g -fPIC -O0 \
-	-DLOCALEDIR="/Users/mark/dev/mshinwell-gdb-install/share/locale" \
-	-DHAVE_CONFIG_H \
-  -I$(OCAML_ROOT)/lib/ocaml \
-	-I$(GDB_ROOT)/gdb \
-	-I$(GDB_ROOT)/intl \
-	-I$(GDB_ROOT)/gdb/common \
-	-I$(GDB_ROOT)/gdb/config \
-  -I$(GDB_ROOT)/include/opcode \
-	-I$(GDB_ROOT)/zlib \
-  -I$(GDB_ROOT)/bfd \
-  -I$(GDB_ROOT)/include \
-  -I$(GDB_ROOT)/libdecnumber \
-	-I$(GDB_ROOT)/gdb/gnulib/import \
-  -I$(GDB_ROOT)/build-gnulib/import \
-  -DTUI=1 \
-	-I/usr/include/python2.7 -I/usr/include/python2.7 -Wall -Wpointer-arith \
-	-Wno-unused -Wunused-value -Wunused-function -Wno-switch \
-  -Wno-char-subscripts \
-	-Wempty-body -Wunused-but-set-parameter -Wunused-but-set-variable \
-	-Wno-sign-compare -Wno-narrowing -Wno-error=maybe-uninitialized
-
-# macOS
 #CC=g++ -x c++ -std=gnu++11 -g -fPIC -O0 \
+#	-DLOCALEDIR="/Users/mark/dev/mshinwell-gdb-install/share/locale" \
+#	-DHAVE_CONFIG_H \
 #  -I$(OCAML_ROOT)/lib/ocaml \
-#  -I$(GDB_ROOT)/gdb\
-#  -I$(GDB_ROOT)/gdb/common \
-#  -I$(GDB_ROOT)/gdb/config \
-#  -DLOCALEDIR="/Users/mark/dev/mshinwell-gdb-install/share/locale" \
-#  -DHAVE_CONFIG_H \
-#  -I$(GDB_ROOT)/gdb/../include/opcode \
-#  -I$(GDB_ROOT)/gdb/../opcodes/.. \
-#  -I$(GDB_ROOT)/gdb/../readline/.. \
-#  -I$(GDB_ROOT)/gdb/../zlib \
-#  -I../bfd \
-#  -I$(GDB_ROOT)/gdb/../bfd \
-#  -I$(GDB_ROOT)/gdb/../include -I../libdecnumber \
-#  -I$(GDB_ROOT)/gdb/../libdecnumber \
-#  -I$(GDB_ROOT)/gdb/../intl \
-#  -I$(GDB_ROOT)/gdb/gnulib/import \
+#	-I$(GDB_ROOT)/gdb \
+#	-I$(GDB_ROOT)/intl \
+#	-I$(GDB_ROOT)/gdb/common \
+#	-I$(GDB_ROOT)/gdb/config \
+#  -I$(GDB_ROOT)/include/opcode \
+#	-I$(GDB_ROOT)/zlib \
+#  -I$(GDB_ROOT)/bfd \
+#  -I$(GDB_ROOT)/include \
+#  -I$(GDB_ROOT)/libdecnumber \
+#	-I$(GDB_ROOT)/gdb/gnulib/import \
 #  -I$(GDB_ROOT)/build-gnulib/import \
 #  -DTUI=1 \
-#  -I/usr/local/Cellar/python@2/2.7.15_1/Frameworks/Python.framework/Versions/2.7/include/python2.7 \
-#  -I/usr/local/Cellar/python@2/2.7.15_1/Frameworks/Python.framework/Versions/2.7/include/python2.7 \
-#  -Wall -Wpointer-arith -Wno-unused -Wunused-value -Wunused-function -Wno-switch \
-#  -Wno-char-subscripts -Wempty-body -Wno-sign-compare -Wno-narrowing -Wno-mismatched-tags \
-#  -Wno-error=deprecated-register -Wformat-nonliteral  -c
+#	-I/usr/include/python2.7 -I/usr/include/python2.7 -Wall -Wpointer-arith \
+#	-Wno-unused -Wunused-value -Wunused-function -Wno-switch \
+#  -Wno-char-subscripts \
+#	-Wempty-body -Wunused-but-set-parameter -Wunused-but-set-variable \
+#	-Wno-sign-compare -Wno-narrowing -Wno-error=maybe-uninitialized
+
+# macOS
+CC=g++ -x c++ -std=gnu++11 -g -fPIC -O0 \
+  -I$(OCAML_ROOT)/lib/ocaml \
+  -I$(GDB_ROOT)/gdb\
+  -I$(GDB_ROOT)/gdb/common \
+  -I$(GDB_ROOT)/gdb/cli \
+  -I$(GDB_ROOT)/gdb/config \
+  -DLOCALEDIR="/Users/mark/dev/mshinwell-gdb-install/share/locale" \
+  -DHAVE_CONFIG_H \
+  -I$(GDB_ROOT)/gdb/../include/opcode \
+  -I$(GDB_ROOT)/gdb/../opcodes/.. \
+  -I$(GDB_ROOT)/gdb/../readline/.. \
+  -I$(GDB_ROOT)/gdb/../zlib \
+  -I../bfd \
+  -I$(GDB_ROOT)/gdb/../bfd \
+  -I$(GDB_ROOT)/gdb/../include -I../libdecnumber \
+  -I$(GDB_ROOT)/gdb/../libdecnumber \
+  -I$(GDB_ROOT)/gdb/../intl \
+  -I$(GDB_ROOT)/gdb/gnulib/import \
+  -I$(GDB_ROOT)/build-gnulib/import \
+  -DTUI=1 \
+  -I/usr/local/Cellar/python@2/2.7.15_1/Frameworks/Python.framework/Versions/2.7/include/python2.7 \
+  -I/usr/local/Cellar/python@2/2.7.15_1/Frameworks/Python.framework/Versions/2.7/include/python2.7 \
+  -Wall -Wpointer-arith -Wno-unused -Wunused-value -Wunused-function -Wno-switch \
+  -Wno-char-subscripts -Wempty-body -Wno-sign-compare -Wno-narrowing -Wno-mismatched-tags \
+  -Wno-error=deprecated-register -Wformat-nonliteral  -c
 
 GDB_BACKEND=gdb_backend/gdb_debugger.mli \
   gdb_backend/gdb_debugger.ml \

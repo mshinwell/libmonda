@@ -53,6 +53,7 @@
 #include "stack.h"
 #include "source.h"
 #include "objfiles.h"
+#include "cli-style.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -63,6 +64,7 @@
 #include <caml/memory.h>
 #include <caml/alloc.h>
 #include <caml/mlvalues.h>
+#include <caml/fail.h>
 
 /* Remember: No gdb exceptions may escape from the functions called from OCaml
    in this file.  (See from_gdb.c for an explanation.)
@@ -596,4 +598,40 @@ monda_value_as_long(struct value* value)
   END_CATCH
 
   return retval;
+}
+
+extern "C"
+caml_value monda_gdb_style_to_ansi_escape(caml_value gdb_style)
+{
+  CAMLparam1(gdb_style);
+  ui_file_style style;
+
+  switch (Long_val (gdb_style)) {
+    case 0:
+      style = get_applied_style ();
+      break;
+
+    case 1:
+      style = file_name_style.style ();
+      break;
+
+    case 2:
+      style = function_name_style.style ();
+      break;
+
+    case 3:
+      style = variable_name_style.style ();
+      break;
+
+    case 4:
+      style = address_style.style ();
+      break;
+
+    default:
+      caml_failwith ("Unknown style");
+  }
+
+  std::string ansi = style.to_ansi ();
+
+  CAMLreturn (caml_copy_string (ansi.c_str ()));
 }

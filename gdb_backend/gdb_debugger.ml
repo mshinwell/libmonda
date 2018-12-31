@@ -482,11 +482,64 @@ type stream = Gdb.Ui_file.t
 exception Debugger_formatter_stopped
 *)
 
+module Gdb_style = struct
+  type t =
+    | Normal
+    | File_name
+    | Function_name
+    | Variable_name
+    | Address
+
+  external to_ansi_escape : t -> string
+    = "_native_only" "monda_gdb_style_to_ansi_escape"
+end
+
+let intercept_style_tags_on_formatter ppf =
+  let stag_functions = Format.pp_get_formatter_stag_functions ppf () in
+  let mark_open_stag stag =
+    let gdb_style : Gdb_style.t option =
+      match stag with
+      | Format.String_tag "file_name_colour" -> Some File_name
+      | Format.String_tag "function_name_colour" -> Some Function_name
+      | Format.String_tag "variable_name_colour" -> Some Variable_name
+      | Format.String_tag "address_colour" -> Some Address
+      | _ -> None
+    in
+    match gdb_style with
+    | None -> stag_functions.mark_open_stag stag
+    | Some gdb_style -> Gdb_style.to_ansi_escape gdb_style
+  in
+  let mark_close_stag stag =
+    let was_gdb_style =
+      match stag with
+      | Format.String_tag "file_name_colour"
+      | Format.String_tag "function_name_colour"
+      | Format.String_tag "variable_name_colour"
+      | Format.String_tag "address_colour" -> true
+      | _ -> false
+    in
+    if not was_gdb_style then stag_functions.mark_close_stag stag
+    else Gdb_style.to_ansi_escape Normal
+  in
+  let stag_functions =
+    { stag_functions with
+      mark_open_stag;
+      mark_close_stag;
+    }
+  in
+  Format.pp_set_tags ppf true;
+  Format.pp_set_mark_tags ppf true;
+  Format.pp_set_formatter_stag_functions ppf stag_functions
+
 let formatter (stream : stream) =
-  Format.make_formatter (fun str pos len ->
-      let str = String.sub str pos len in
-      Gdb.Ui_file.print_filtered stream str)
-    (fun () -> ())
+  let ppf =
+    Format.make_formatter (fun str pos len ->
+        let str = String.sub str pos len in
+        Gdb.Ui_file.print_filtered stream str)
+      (fun () -> ())
+  in
+  intercept_style_tags_on_formatter ppf;
+  ppf
 
 (* CR-someday mshinwell: Things to add:
   - GC-safe watchpoints

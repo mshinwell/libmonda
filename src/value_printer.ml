@@ -123,7 +123,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         (* One common case: a value that is usually boxed but for the moment is
            initialized with [Val_unit].  For example: module fields before
            initializers have been run when using [Closure]. *)
-        if V.int v = Some 0 then Format.fprintf formatter "()"
+        if V.int v = Some 0 then
+          Format.fprintf formatter "@{<function_name_colour>()@}"
         else
           begin match V.raw v with
           | Some v -> Format.fprintf formatter "0x%nx" v
@@ -150,7 +151,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         | None -> Format.fprintf formatter "<Int?>"
         end
       | Char -> print_char t ~state v
-      | Abstract path -> Format.fprintf formatter "<%s>" (Path.name path)
+      | Abstract path ->
+        Format.fprintf formatter "@{<address_colour><%s>@}" (Path.name path)
       | Array (ty, env) -> print_array t ~state ~ty ~env v
       | List (ty, env) ->
         print_list t ~state ~ty_and_env:(Some (ty, env)) v
@@ -202,9 +204,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     else begin
       begin match prefix with
       | None -> Format.fprintf formatter "@[<1>[%d: " (V.tag_exn value)
-      (* CR mshinwell: remove dreadful hack *)
-      | Some "XXX" -> ()
-      | Some p -> Format.fprintf formatter "@[%s " p
+      | Some p -> Format.fprintf formatter "@[<hov 2>%a " p ()
       end;
       let original_size = V.size_exn value in
       let max_size =
@@ -229,7 +229,6 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       end;
       begin match prefix with
       | None -> Format.fprintf formatter "]@]"
-      | Some "XXX" -> ()
       | Some _ -> Format.fprintf formatter "@]"
       end
     end
@@ -276,7 +275,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           component_types
       in
       if List.length tys > 1 then Format.fprintf formatter "(";
-      generic_printer t ~state ~printers ~prefix:"XXX"
+      generic_printer t ~state ~printers ~prefix:(fun _ () -> ())
         ~guess_if_it's_a_list:false v;
       if List.length tys > 1 then Format.fprintf formatter ")"
 
@@ -294,7 +293,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           let type_of_ident = Some (ty, env) in
           print_value t ~state:(descend state) ~type_of_ident v)
       in
-      generic_printer t ~state ~separator:";" ~printers ~prefix:"XXX"
+      generic_printer t ~state ~separator:";" ~printers ~prefix:(fun _ () -> ())
         ~guess_if_it's_a_list:false v;
       Format.fprintf formatter " |]"
     end
@@ -335,7 +334,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
 
   and print_ref t ~state ~ty ~env v =
     let formatter = state.formatter in
-    Format.fprintf formatter "ref ";
+    Format.fprintf formatter "@{<function_name_colour>ref@} ";
     match V.field_exn v 0 with
     | None -> Format.fprintf formatter "<optimized out>"
     | Some contents ->
@@ -386,13 +385,13 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         if field_nb > 0 then Format.fprintf formatter "@   ";
         try
           let (field_name, printer) = fields_helpers.(field_nb) in
+          Format.fprintf formatter "@[<2>@{<variable_name_colour>%s@}@ =@ "
+            field_name;
           match V.field_exn v field_nb with
           | None ->
-            Format.fprintf formatter "@[<2>%s@ =@ " field_name;
             Format.fprintf formatter "<optimized out>";
             Format.fprintf formatter ";@]"
           | Some v ->
-            Format.fprintf formatter "@[<2>%s@ =@ " field_name;
             printer v;
             Format.fprintf formatter ";@]"
         with D.Read_error ->
@@ -485,7 +484,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
 
   and print_constant_constructor _t ~state ~kind ~name =
     let formatter = state.formatter in
-    Format.fprintf formatter "%s%s" (Variant_kind.to_string_prefix kind) name
+    Format.fprintf formatter "@{<function_name_colour>%s%s@}"
+      (Variant_kind.to_string_prefix kind) name
 
   and print_non_constant_constructor t ~state ~path:_ ~ctor_decls ~params
         ~instantiated_params ~env ~kind v =
@@ -558,14 +558,18 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                 ~type_of_ident:(Some (arg_ty, env)) v)
             args
         in
-        let prefix =
+        let prefix ppf () =
           let name = Ident.name cident in
-          if List.length args > 1 then Printf.sprintf "%s%s (" kind name
-          else name
+          if List.length args > 1 then
+            Format.fprintf ppf "@{<function_name_colour>%s%s@} (" kind name
+          else
+            Format.fprintf ppf "@{<function_name_colour>%s@}" name
         in
         generic_printer t ~state ~printers ~prefix
           ~guess_if_it's_a_list:true v;
-        if List.length args > 1 then Format.fprintf formatter ")"
+        if List.length args > 1 then begin
+          Format.fprintf formatter ")"
+        end
       end
     end
 
