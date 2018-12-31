@@ -143,7 +143,8 @@ monda_find_and_open(caml_value v_filename, caml_value v_dirname_opt)
   CAMLparam2(v_filename, v_dirname_opt);
   CAMLlocal2(v_fullname_and_fd, v_some);
 
-  int result;
+  scoped_fd result;
+  int fd;
   gdb::unique_xmalloc_ptr<char> fullname;
 
   result = find_and_open_source (String_val(v_filename),
@@ -152,15 +153,18 @@ monda_find_and_open(caml_value v_filename, caml_value v_dirname_opt)
                                    : NULL,
                                  &fullname);
 
-  if (result == -1)
+  if (result.get () < 0)
     {
       /* CR mshinwell: Transmit [errno] back. */
       CAMLreturn(Val_long(0) /* None */);
     }
 
+  /* Prevent [result]'s destructor closing [fd]. */
+  fd = result.release ();
+
   v_fullname_and_fd = caml_alloc(2, 0);
   Store_field(v_fullname_and_fd, 0, caml_copy_string(fullname.get()));
-  Store_field(v_fullname_and_fd, 1, Val_long(result));
+  Store_field(v_fullname_and_fd, 1, Val_long(fd));
 
   v_some = caml_alloc_small(1, 0 /* Some */);
   Field(v_some, 0) = v_fullname_and_fd;

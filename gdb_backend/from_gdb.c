@@ -158,6 +158,7 @@ monda_val_print (struct type* type, int embedded_offset, CORE_ADDR address,
       fflush(stderr);
       */
 
+      /* CR mshinwell: This should catch any OCaml exceptions. */
       if (caml_callbackN(*callback, 11, args) == Val_false) {
 /*
         fprintf(stderr, "monda_val_print -> c_val_print (2)\n");
