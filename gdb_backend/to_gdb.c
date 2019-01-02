@@ -627,6 +627,14 @@ caml_value monda_gdb_style_to_ansi_escape(caml_value gdb_style)
       style = address_style.style ();
       break;
 
+    case 5:
+      style = type_style.style ();
+      break;
+
+    case 6:
+      style = error_style.style ();
+      break;
+
     default:
       caml_failwith ("Unknown style");
   }
@@ -634,4 +642,23 @@ caml_value monda_gdb_style_to_ansi_escape(caml_value gdb_style)
   std::string ansi = style.to_ansi ();
 
   CAMLreturn (caml_copy_string (ansi.c_str ()));
+}
+
+extern "C"
+caml_value monda_get_chars_printed_on_current_line (caml_value v_unit)
+{
+  return Val_long (get_chars_printed_on_current_line ());
+}
+
+extern "C"
+caml_value monda_wrap_column (caml_value v_unit)
+{
+  return Val_long (get_wrap_column ());
+}
+
+extern "C"
+caml_value monda_set_wrap_column (caml_value v_col)
+{
+  set_wrap_column (Long_val (v_col));
+  return Val_long (0);
 }

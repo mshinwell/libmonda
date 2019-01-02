@@ -48,8 +48,8 @@ module Result = struct
     | Obj_boxed_traversable
     | Obj_boxed_not_traversable
     (* CR mshinwell: naming *)
-    | Obj_unboxed
-    | Obj_unboxed_but_should_be_boxed
+    | Obj_immediate
+    | Obj_immediate_but_should_be_boxed
     | Unit
     | Abstract of Path.t
     | Array of Types.type_expr * Env.t
@@ -80,8 +80,8 @@ module Result = struct
   let to_string = function
     | Obj_boxed_traversable -> "Obj_boxed_traversable"
     | Obj_boxed_not_traversable -> "Obj_boxed_not_traversable"
-    | Obj_unboxed -> "Obj_unboxed"
-    | Obj_unboxed_but_should_be_boxed -> "Obj_unboxed_but_should_be_boxed"
+    | Obj_immediate -> "Obj_immediate"
+    | Obj_immediate_but_should_be_boxed -> "Obj_immediate_but_should_be_boxed"
     | Unit -> "Unit"
     | Abstract _ -> "Abstract"
     | Array _ -> "Array"
@@ -145,7 +145,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     (* CR mshinwell: validate more things (e.g. value size) *)
     if Path.same path Predef.path_array then
       match scrutinee with
-      | Unboxed _ -> Some Obj_unboxed_but_should_be_boxed
+      | Unboxed _ -> Some Obj_immediate_but_should_be_boxed
       | Absent | Boxed _ ->
         match args with
         | [arg] -> Some (Array (arg, env))
@@ -155,7 +155,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | [arg] -> Some (List (arg, env))
       | _ ->
         match scrutinee with  (* wrong number of arguments *)
-        | Unboxed _ -> Some Obj_unboxed
+        | Unboxed _ -> Some Obj_immediate
         | Boxed _ -> Some Obj_boxed_traversable
         | Absent -> Some Unknown
     else if Path.same path Predef.path_int then
@@ -172,7 +172,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | Boxed _ -> Some Obj_boxed_traversable  (* should not be boxed *)
     else if Path.same path format6_path then
       match scrutinee with
-      | Unboxed _ -> Some Obj_unboxed
+      | Unboxed _ -> Some Obj_immediate
       | Boxed _ -> Some Format6
       | Absent -> Some Unknown
     else
@@ -197,7 +197,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
              the environment. *)
           begin match scrutinee with
           | Absent -> Unknown
-          | Unboxed _ -> Obj_unboxed
+          | Unboxed _ -> Obj_immediate
           | Boxed _ ->
             if debug then
               Printf.printf "examine_type_expr error case 1, load path is: %s\n%!"
@@ -223,7 +223,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           List.map labels ~f:(fun label -> label, Btype.hash_variant label)
         in
         match V.int scrutinee with
-        | None -> Obj_unboxed  (* CR mshinwell: error? *)
+        | None -> Obj_immediate  (* CR mshinwell: error? *)
         | Some desired_hash ->
           let matches =
             List.filter ctor_names_and_hashes
@@ -232,18 +232,18 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           begin match matches with
           | [(ctor_name, _hash)] ->
             Constant_constructor (ctor_name, Vk.Polymorphic)
-          | _::_ | [] -> Obj_unboxed  (* cannot find ctor with given hash *)
+          | _::_ | [] -> Obj_immediate  (* cannot find ctor with given hash *)
           end
       end
     | Types.Ttuple component_types ->
       begin match scrutinee with
       | Absent | Boxed _ -> Tuple (component_types, env)
-      | Unboxed _ -> Obj_unboxed_but_should_be_boxed
+      | Unboxed _ -> Obj_immediate_but_should_be_boxed
       end
     | Types.Tarrow _ ->
       begin match scrutinee with
       | Absent | Boxed _ -> Closure
-      | Unboxed _ -> Obj_unboxed_but_should_be_boxed
+      | Unboxed _ -> Obj_immediate_but_should_be_boxed
       end
     | Types.Tvar _
     | Types.Tobject _ | Types.Tfield _ | Types.Tnil | Types.Tsubst _
@@ -265,7 +265,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         in
         if debug then Printf.printf "examine_type_expr error case 3 %s\n%!" what;
         Obj_boxed_traversable
-      | Unboxed _ -> Obj_unboxed
+      | Unboxed _ -> Obj_immediate
       end
     | Types.Tlink _type_expr ->
       (* Should have been eliminated by [Btype.repr]. *)
@@ -295,7 +295,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           | Unboxed scrutinee ->
             let constant_ctors = extract_constant_ctors ~cases in
             match V.int scrutinee with
-            | None -> Obj_unboxed (* CR mshinwell: as above *)
+            | None -> Obj_immediate (* CR mshinwell: as above *)
             | Some value ->
               if value >= 0 && value < List.length constant_ctors then
                 let ident =
@@ -305,10 +305,10 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                 begin match ident with
                 | Some ident ->
                   Constant_constructor (Ident.name ident, Vk.Non_polymorphic)
-                | None -> Obj_unboxed
+                | None -> Obj_immediate
                 end
               else
-                Obj_unboxed
+                Obj_immediate
           end
         | Types.Type_abstract ->
           if List.mem path ~set:paths_visited_so_far then begin
@@ -333,7 +333,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
               Record (path, params, args, field_decls, record_repr, env)
           | Unboxed _ ->
             (* Records should never be unboxed values, but behave gracefully. *)
-            Obj_unboxed
+            Obj_immediate
           end
         | Types.Type_open -> Open
         end
@@ -364,7 +364,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       try
         if absent || V.is_int scrutinee then
           match type_expr_and_env with
-          | None -> if absent then Unknown else Obj_unboxed
+          | None -> if absent then Unknown else Obj_immediate
           | Some (type_expr, env) ->
             examine_type_expr t ~formatter ~paths_visited_so_far:[] ~type_expr
               ~env ~scrutinee:(Unboxed scrutinee)
@@ -393,7 +393,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           | tag when tag < Obj.no_scan_tag -> Obj_boxed_traversable
           | _tag -> Obj_boxed_not_traversable
       (* CR mshinwell: Fix code properly so this handler isn't needed *)
-      with _ -> Obj_unboxed
+      with _ -> Obj_immediate
     in
     if debug then begin
       Printf.printf "find_type_information returning %s\n%!"

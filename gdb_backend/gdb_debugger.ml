@@ -489,6 +489,8 @@ module Gdb_style = struct
     | Function_name
     | Variable_name
     | Address
+    | Type
+    | Error
 
   external to_ansi_escape : t -> string
     = "_native_only" "monda_gdb_style_to_ansi_escape"
@@ -503,6 +505,8 @@ let intercept_style_tags_on_formatter ppf =
       | Format.String_tag "function_name_colour" -> Some Function_name
       | Format.String_tag "variable_name_colour" -> Some Variable_name
       | Format.String_tag "address_colour" -> Some Address
+      | Format.String_tag "type_colour" -> Some Type
+      | Format.String_tag "error_colour" -> Some Error
       | _ -> None
     in
     match gdb_style with
@@ -515,7 +519,9 @@ let intercept_style_tags_on_formatter ppf =
       | Format.String_tag "file_name_colour"
       | Format.String_tag "function_name_colour"
       | Format.String_tag "variable_name_colour"
-      | Format.String_tag "address_colour" -> true
+      | Format.String_tag "address_colour"
+      | Format.String_tag "type_colour"
+      | Format.String_tag "error_colour" -> true
       | _ -> false
     in
     if not was_gdb_style then stag_functions.mark_close_stag stag
@@ -540,6 +546,35 @@ let formatter (stream : stream) =
   in
   intercept_style_tags_on_formatter ppf;
   ppf
+
+external monda_get_chars_printed_on_current_line : unit -> int
+  = "_native_only" "monda_get_chars_printed_on_current_line"
+
+external monda_wrap_column : unit -> int
+  = "_native_only" "monda_wrap_column"
+
+(* CR mshinwell: This is only intended to be temporary to work around
+   gdb master's awful formatting. *)
+external monda_set_wrap_column : int -> unit
+  = "_native_only" "monda_set_wrap_column"
+
+let with_formatter_margins ppf ~summary f =
+  if not summary then begin
+    let wrap_column = monda_wrap_column () in
+    if wrap_column > 0 then begin
+      Format.pp_set_margin ppf wrap_column;
+    end;
+    let indent = monda_get_chars_printed_on_current_line () in
+    Format.pp_open_vbox ppf (indent + 2);
+    f ppf;
+    Format.pp_close_box ppf ()
+  end else begin
+    monda_set_wrap_column 0;
+    Format.pp_open_hbox ppf ();
+    Format.pp_set_margin ppf max_int;
+    f ppf;
+    Format.pp_close_box ppf ()
+  end
 
 (* CR-someday mshinwell: Things to add:
   - GC-safe watchpoints

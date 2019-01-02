@@ -47,8 +47,8 @@ module Result : sig
   type t = private
     | Obj_boxed_traversable
     | Obj_boxed_not_traversable
-    | Obj_unboxed
-    | Obj_unboxed_but_should_be_boxed
+    | Obj_immediate
+    | Obj_immediate_but_should_be_boxed
     | Unit
     | Abstract of Path.t
     | Array of Types.type_expr * Env.t

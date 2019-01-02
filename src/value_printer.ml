@@ -34,6 +34,8 @@ module Variant_kind = Type_oracle.Variant_kind
 
 let debug = Monda_debug.debug
 
+let optimized_out = "<unavailable>"
+
 module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
   (* CR mshinwell: Remove "our" *)
   module Our_type_oracle = Type_oracle.Make (D) (Cmt_cache)
@@ -46,6 +48,11 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     cmt_cache : Cmt_cache.t;
   }
 
+  type operator =
+    | Nothing
+    | Separator
+    | Application
+
   type state = {
     summary : bool;
     depth : int;
@@ -56,12 +63,14 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     max_array_elements_etc_to_print : int;
     only_print_short_type : bool;
     only_print_short_value : bool;
+    operator_above : operator;
   }
 
-  let descend state =
+  let descend state ~current_operator =
     { state with
       depth = state.depth + 1;
       print_sig = false;
+      operator_above = current_operator;
     }
 
   let create ~cmt_cache =
@@ -84,6 +93,21 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       else
         false
 
+  let maybe_parenthesise state ~current_operator f =
+    let needs_parentheses =
+      match state.operator_above, current_operator with
+      | Application, Application -> true
+      | (Nothing | Separator | Application), _ -> false
+    in
+    let formatter = state.formatter in
+    if needs_parentheses then begin
+      Format.fprintf formatter "("
+    end;
+    f ();
+    if needs_parentheses then begin
+      Format.fprintf formatter ")"
+    end
+
   let print_type_of_value _t ~state ~type_expr_and_env =
     (* In the cases where the type expression is absent or unhelpful then
        we could print, e.g. " : string" when the value has tag [String_tag].
@@ -96,16 +120,18 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     let formatter = state.formatter in
     match type_expr_and_env with
     | None -> ()
-    | Some (type_expr, _env) ->
+    | Some (type_expr, env) ->
       let type_expr = Btype.repr type_expr in
       match type_expr.desc with
       | Tvar _ | Tunivar _ | Tnil | Tlink _
       | Tsubst _ -> ()  (* ignore unhelpful types, as above *)
       | Tarrow _ | Ttuple _ | Tconstr _ | Tobject _ | Tfield _ | Tvariant _
       | Tpoly _ | Tpackage _ ->
-        Format.fprintf formatter " : ";
-        Printtyp.reset_and_mark_loops type_expr;
-        Printtyp.type_expr formatter type_expr
+        Format.fprintf formatter " : @{<type_colour>";
+        Printtyp.wrap_printing_env ~error:false env (fun () ->
+          Printtyp.reset_and_mark_loops type_expr;
+          Printtyp.type_expr formatter type_expr);
+        Format.fprintf formatter "@}"
 
   let rec print_value t ~state ~type_of_ident:type_expr_and_env v : unit =
     let formatter = state.formatter in
@@ -115,11 +141,11 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     in
     if (state.summary && state.depth > 2)
         || state.depth > state.max_depth then begin
-      Format.fprintf formatter ".."
+      Format.fprintf formatter "_"
     end else begin
       match type_info with
-      | Obj_unboxed -> print_int t ~state v
-      | Obj_unboxed_but_should_be_boxed ->
+      | Obj_immediate -> print_int t ~state v
+      | Obj_immediate_but_should_be_boxed ->
         (* One common case: a value that is usually boxed but for the moment is
            initialized with [Val_unit].  For example: module fields before
            initializers have been run when using [Closure]. *)
@@ -127,28 +153,24 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           Format.fprintf formatter "@{<function_name_colour>()@}"
         else
           begin match V.raw v with
-          | Some v -> Format.fprintf formatter "0x%nx" v
+          | Some v -> Format.fprintf formatter "@{<error_colour>0x%nx}" v
           | None -> Format.fprintf formatter "<synthetic pointer>"
           end
       | Obj_boxed_traversable ->
         if state.summary then Format.fprintf formatter "..."
-        else
-          let printers =
-            Array.init (V.size_exn v) (fun _ v ->
-              print_value t ~state:(descend state) ~type_of_ident:None v)
-          in
-          generic_printer t ~state ~guess_if_it's_a_list:true ~printers v
+        else print_multiple_without_type_info t ~state v
       | Obj_boxed_not_traversable ->
         begin match V.raw v with
         | Some raw ->
-          Format.fprintf formatter "<0x%nx, tag %d>" raw (V.tag_exn v)
+          Format.fprintf formatter "@{<error_colour><0x%nx, tag %d>@}"
+            raw (V.tag_exn v)
         | None -> Format.fprintf formatter "<synthetic pointer>"
         end
       | Unit -> Format.fprintf formatter "()"
       | Int ->
         begin match V.int v with
         | Some i -> Format.fprintf formatter "%d" i
-        | None -> Format.fprintf formatter "<Int?>"
+        | None -> Format.fprintf formatter "@{<error_colour><Int?>@}"
         end
       | Char -> print_char t ~state v
       | Abstract path ->
@@ -185,27 +207,28 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | _ -> print_type_of_value t ~state ~type_expr_and_env
     end
 
-  and generic_printer t ~state ?(separator = ",") ?prefix
-        ~guess_if_it's_a_list ~(printers : (V.t -> unit) array)
-        value : unit =
+  and print_multiple_without_type_info t ~state value =
     let formatter = state.formatter in
-    if guess_if_it's_a_list
-        (* If a value, that cannot be identified sensibly from its type,
-           looks like a (non-empty) list then we assume it is such.  It seems
-           more likely than a set of nested pairs. *)
-        && value_looks_like_list t value
-    then
+    (* If a value, that cannot be identified sensibly from its type,
+         looks like a (non-empty) list then we assume it is such.  It seems
+         more likely than a set of nested pairs. *)
+    if value_looks_like_list t value then begin
       if state.summary then
-        Format.fprintf formatter "[...]?"
+        Format.fprintf formatter "@{<error_colour>[...]?@}"
       else begin
         print_list t ~state ~ty_and_env:None value;
-        Format.fprintf formatter "?"
+        Format.fprintf formatter "@{<error_colour>?@}"
       end
-    else begin
-      begin match prefix with
-      | None -> Format.fprintf formatter "@[<1>[%d: " (V.tag_exn value)
-      | Some p -> Format.fprintf formatter "@[<hov 2>%a " p ()
+    end else begin
+      let need_outer_box =
+        match state.operator_above with
+        | Nothing -> false
+        | _ -> true
+      in
+      if need_outer_box then begin
+        Format.fprintf formatter "@[<hov 2>"
       end;
+      Format.fprintf formatter "@{<error_colour>[tag %d: " (V.tag_exn value);
       let original_size = V.size_exn value in
       let max_size =
         if state.summary then 2 else state.max_array_elements_etc_to_print
@@ -215,22 +238,89 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         else original_size, false
       in
       for field = 0 to size - 1 do
-        if field > 0 then Format.fprintf formatter "%s@;<1 0>" separator;
-        try
-          match V.field_exn value field with
-          | None -> Format.fprintf formatter "<optimized out>"
-          | Some field_value -> printers.(field) field_value
-        with D.Read_error ->
-          Format.fprintf formatter "<field %d read failed>" field
+        if field > 0 then begin
+          Format.fprintf formatter "@ "
+        end;
+        match V.field_exn value field with
+        | None -> Format.fprintf formatter "%s" optimized_out
+        | Some field_value ->
+          let state = descend state ~current_operator:Separator in
+          print_value t ~state ~type_of_ident:None field_value
+        | exception D.Read_error ->
+          Format.fprintf formatter "@{<error_colour><field %d read failed>@}"
+            field
       done;
       if truncated then begin
-        Format.fprintf formatter "%s <%d elements follow>" separator
-            (original_size - max_size)
+        Format.fprintf formatter " <%d elements follow>"
+          (original_size - max_size)
       end;
-      begin match prefix with
-      | None -> Format.fprintf formatter "]@]"
-      | Some _ -> Format.fprintf formatter "@]"
+      Format.fprintf formatter "]@}";
+      if need_outer_box then begin
+        Format.fprintf formatter "@]"
       end
+    end
+
+  and print_multiple_with_type_info ?print_prefix _t ~state ~printers
+        ~current_operator ~opening_delimiter ~separator ~closing_delimiter
+        ~spaces_inside_delimiters ~can_elide_delimiters value =
+    let formatter = state.formatter in
+    let original_size = V.size_exn value in
+    let max_size =
+      if state.summary then 2 else state.max_array_elements_etc_to_print
+    in
+    let size, truncated =
+      if original_size > max_size then max_size, true
+      else original_size, false
+    in
+    let indent =
+      String.length opening_delimiter
+        + (if spaces_inside_delimiters then 1 else 0)
+    in
+    let need_outer_box =
+      match state.operator_above with
+      | Nothing -> false
+      | _ -> true
+    in
+    if need_outer_box then begin
+      Format.pp_open_hovbox formatter indent
+    end;
+    begin match print_prefix with
+    | None -> ()
+    | Some print_prefix -> print_prefix formatter ()
+    end;
+    let elide_delimiters = can_elide_delimiters && size = 1 in
+    if not elide_delimiters then begin
+      Format.fprintf formatter "%s" opening_delimiter;
+      if spaces_inside_delimiters then begin
+        Format.fprintf formatter "@ "
+      end;
+      Format.fprintf formatter "@,"
+    end;
+    for field = 0 to size - 1 do
+      if field > 0 then begin
+        Format.fprintf formatter "%s@ " separator
+      end;
+      match V.field_exn value field with
+      | None -> Format.fprintf formatter "%s" optimized_out
+      | Some field_value ->
+        let state = descend state ~current_operator in
+        printers.(field) state field_value
+      | exception D.Read_error ->
+        Format.fprintf formatter "@{<error_colour><field %d read failed>@}"
+          field
+    done;
+    if truncated then begin
+      Format.fprintf formatter "%s@ <%d elements follow>" separator
+        (original_size - max_size)
+    end;
+    if not elide_delimiters then begin
+      if spaces_inside_delimiters && size > 0 then begin
+        Format.fprintf formatter "@ "
+      end;
+      Format.fprintf formatter "%s" closing_delimiter
+    end;
+    if need_outer_box then begin
+      Format.fprintf formatter "@]"
     end
 
   and print_int _t ~state v =
@@ -262,46 +352,38 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       Format.fprintf formatter "%S" (V.string v)
 
   and print_tuple t ~state ~tys ~env v =
-    let formatter = state.formatter in
-    if state.summary && (List.length tys > 2 || state.depth > 0) then
-      Format.fprintf formatter "(...)"
-    else
-      let component_types = Array.of_list tys in
-      let size_ok = Array.length component_types = V.size_exn v in
-      let printers =
-        Array.map (fun ty v ->
-            let type_of_ident = if size_ok then Some (ty, env) else None in
-            print_value t ~state:(descend state) ~type_of_ident v)
-          component_types
-      in
-      if List.length tys > 1 then Format.fprintf formatter "(";
-      generic_printer t ~state ~printers ~prefix:(fun _ () -> ())
-        ~guess_if_it's_a_list:false v;
-      if List.length tys > 1 then Format.fprintf formatter ")"
+    let component_types = Array.of_list tys in
+    let size_ok = Array.length component_types = V.size_exn v in
+    let printers =
+      Array.map (fun ty state v ->
+          let type_of_ident = if size_ok then Some (ty, env) else None in
+          print_value t ~state ~type_of_ident v)
+        component_types
+    in
+    print_multiple_with_type_info t ~state ~printers
+      ~current_operator:Separator
+      ~opening_delimiter:"(" ~separator:"," ~closing_delimiter:")"
+      ~spaces_inside_delimiters:false ~can_elide_delimiters:true
+      v
 
   and print_array t ~state ~ty ~env v =
-    let formatter = state.formatter in
     let size = V.size_exn v in
-    if size = 0 then
-      Format.fprintf formatter "@[[| |]@]"
-    else if state.summary then
-      Format.fprintf formatter "@[[|...|]@]"
-    else begin
-      Format.fprintf formatter "[| ";
-      let printers =
-        Array.init size (fun _ v ->
-          let type_of_ident = Some (ty, env) in
-          print_value t ~state:(descend state) ~type_of_ident v)
-      in
-      generic_printer t ~state ~separator:";" ~printers ~prefix:(fun _ () -> ())
-        ~guess_if_it's_a_list:false v;
-      Format.fprintf formatter " |]"
-    end
+    let printers =
+      Array.init size (fun _ty state v ->
+        let type_of_ident = Some (ty, env) in
+        print_value t ~state ~type_of_ident v)
+    in
+    print_multiple_with_type_info t ~state ~printers
+      ~current_operator:Separator
+      ~opening_delimiter:"[|" ~separator:";" ~closing_delimiter:"|]"
+      ~spaces_inside_delimiters:true ~can_elide_delimiters:false
+      v
 
   and print_list t ~state ~ty_and_env v : unit =
     let formatter = state.formatter in
     let print_element =
-      print_value t ~state:(descend state) ~type_of_ident:ty_and_env
+      let state = descend state ~current_operator:Separator in
+      print_value t ~state ~type_of_ident:ty_and_env
     in
     let max_elements =
       if state.summary then 2 else state.max_array_elements_etc_to_print
@@ -309,7 +391,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     let rec aux v ~element_index =
       if V.is_block v then begin
         if element_index >= max_elements then
-          Format.fprintf formatter "@;..."
+          Format.fprintf formatter "..."
         else begin
           try
             begin match V.field_exn v 0 with
@@ -320,7 +402,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
             | None ->
               Format.fprintf formatter ";@ <list next pointer unavailable>"
             | Some next ->
-              if V.is_block next then Format.fprintf formatter ";@;<1 0>";
+              if V.is_block next then Format.fprintf formatter ";@ ";
               aux next ~element_index:(element_index + 1)
             end;
           with D.Read_error ->
@@ -328,25 +410,39 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         end
       end
     in
-    Format.fprintf formatter "@[<hv>[";
+    let need_outer_box =
+      match state.operator_above with
+      | Nothing -> false
+      | _ -> true
+    in
+    if need_outer_box then begin
+      Format.fprintf formatter "@[<hov 2>"
+    end;
+    Format.fprintf formatter "[";
     aux v ~element_index:0;
-    Format.fprintf formatter "]@]"
+    Format.fprintf formatter "]";
+    if need_outer_box then begin
+      Format.fprintf formatter "@]"
+    end
 
   and print_ref t ~state ~ty ~env v =
     let formatter = state.formatter in
-    Format.fprintf formatter "@{<function_name_colour>ref@} ";
-    match V.field_exn v 0 with
-    | None -> Format.fprintf formatter "<optimized out>"
-    | Some contents ->
-      print_value t ~state:(descend state) ~type_of_ident:(Some (ty, env))
-        contents
+    let current_operator : operator = Application in
+    maybe_parenthesise state ~current_operator (fun () ->
+      Format.fprintf formatter "@{<function_name_colour>ref@} ";
+      match V.field_exn v 0 with
+      | None -> Format.fprintf formatter "%s" optimized_out
+      | Some contents ->
+        let state = descend state ~current_operator in
+        print_value t ~state ~type_of_ident:(Some (ty, env)) contents)
 
   and print_record t ~state ~path:_ ~params ~args ~fields ~record_repr ~env v =
     let formatter = state.formatter in
     if state.summary then
       Format.fprintf formatter "{...}"
     else if List.length fields <> V.size_exn v then
-      Format.fprintf formatter "{expected %d fields, target has %d}"
+      Format.fprintf formatter
+        "{@{<error_colour><expected %d fields, target has %d>@}}"
         (List.length fields) (V.size_exn v)
     else begin
       let fields = Array.of_list fields in
@@ -369,8 +465,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         Array.mapi (fun index ld ->
             let typ = type_for_field ~index in
             let printer v =
-              print_value t ~state:(descend state)
-                ~type_of_ident:(Some (typ, env)) v
+              let state = descend state ~current_operator:Separator in
+              print_value t ~state ~type_of_ident:(Some (typ, env)) v
             in
             Ident.name ld.Types.ld_id, printer)
           fields 
@@ -385,17 +481,18 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         if field_nb > 0 then Format.fprintf formatter "@   ";
         try
           let (field_name, printer) = fields_helpers.(field_nb) in
-          Format.fprintf formatter "@[<2>@{<variable_name_colour>%s@}@ =@ "
+          Format.fprintf formatter "@[<hov 2>@{<variable_name_colour>%s@}@ =@ "
             field_name;
           match V.field_exn v field_nb with
           | None ->
-            Format.fprintf formatter "<optimized out>";
+            Format.fprintf formatter "%s" optimized_out;
             Format.fprintf formatter ";@]"
           | Some v ->
             printer v;
             Format.fprintf formatter ";@]"
         with D.Read_error ->
-          Format.fprintf formatter "<could not read field %d>" field_nb
+          Format.fprintf formatter "@{<error_colour><could not read field %d>}"
+            field_nb
       done;
       Format.fprintf formatter "@ }@]";
       if state.depth = 0 && Array.length fields > 1 then begin
@@ -531,46 +628,37 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       try Some (List.assoc tag non_constant_ctors) with Not_found -> None
     in
     begin match ctor_info with
-    | None ->
-      let printers =
-        Array.init (V.size_exn v) (fun _index v ->
-          print_value t ~state:(descend state) ~type_of_ident:None v)
-      in
-      generic_printer t ~state ~printers ~guess_if_it's_a_list:false v
+    | None -> print_multiple_without_type_info t ~state v
     | Some (cident, args) ->
-      if state.summary || List.length args <> V.size_exn v then begin
-        Format.fprintf formatter "%s%s (...)" kind (Ident.name cident)
-      end else begin
-        let printers =
-          let args = Array.of_list args in
-          Array.map (fun arg_ty v ->
-              if debug then begin
-                Format.fprintf formatter "arg>>";
-                Printtyp.reset_and_mark_loops arg_ty;
-                Printtyp.type_expr formatter arg_ty;
-                Format.fprintf formatter "<<"
-              end;
-              let arg_ty =
-                try Ctype.apply env params arg_ty instantiated_params
-                with Ctype.Cannot_apply -> arg_ty
-              in
-              print_value t ~state:(descend state)
-                ~type_of_ident:(Some (arg_ty, env)) v)
-            args
-        in
-        let prefix ppf () =
-          let name = Ident.name cident in
-          if List.length args > 1 then
-            Format.fprintf ppf "@{<function_name_colour>%s%s@} (" kind name
-          else
-            Format.fprintf ppf "@{<function_name_colour>%s@}" name
-        in
-        generic_printer t ~state ~printers ~prefix
-          ~guess_if_it's_a_list:true v;
-        if List.length args > 1 then begin
-          Format.fprintf formatter ")"
-        end
-      end
+      let current_operator : operator = Application in
+      maybe_parenthesise state ~current_operator (fun () ->
+        if state.summary then begin
+          Format.fprintf formatter "%s%s (...)" kind (Ident.name cident)
+        end else if List.length args <> V.size_exn v then begin
+          Format.fprintf formatter
+            "@[%s%s (@{<error_colour><arg count mismatch>})@]"
+            kind (Ident.name cident)
+        end else begin
+          let printers =
+            let args = Array.of_list args in
+            Array.map (fun arg_ty state v ->
+                let arg_ty =
+                  try Ctype.apply env params arg_ty instantiated_params
+                  with Ctype.Cannot_apply -> arg_ty
+                in
+                print_value t ~state ~type_of_ident:(Some (arg_ty, env)) v)
+              args
+          in
+          let print_prefix ppf () =
+            let name = Ident.name cident in
+            Format.fprintf ppf "@{<function_name_colour>%s%s@} " kind name
+          in
+          print_multiple_with_type_info ~print_prefix t ~state ~printers
+            ~current_operator
+            ~opening_delimiter:"(" ~separator:"," ~closing_delimiter:")"
+            ~spaces_inside_delimiters:false ~can_elide_delimiters:true
+            v
+        end)
     end
 
   and print_float _t ~state v =
@@ -584,6 +672,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     if size = 0 then Format.fprintf formatter "@[[| |] (* float array *)@]"
     else if state.summary then Format.fprintf formatter "@[[|...|]@]"
     else begin
+      (* CR mshinwell: Should use [print_multiple_with_type_info] *)
       Format.fprintf formatter "@[<1>[| ";
       for i = 0 to size - 1 do
         Format.fprintf formatter "%f" (V.float_field_exn v i);
@@ -645,8 +734,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       Our_type_oracle.find_type_information t.type_oracle ~formatter
         ~type_expr_and_env ~scrutinee:v
     with
-    | Obj_unboxed -> Format.fprintf formatter "unboxed"
-    | Obj_unboxed_but_should_be_boxed ->
+    | Obj_immediate -> Format.fprintf formatter "unboxed"
+    | Obj_immediate_but_should_be_boxed ->
       if V.int v = Some 0 then Format.fprintf formatter "unboxed/uninited"
       else Format.fprintf formatter "unboxed (?)"
     | Obj_boxed_traversable -> Format.fprintf formatter "boxed"
@@ -687,8 +776,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       Our_type_oracle.find_type_information t.type_oracle ~formatter
         ~type_expr_and_env ~scrutinee:v
     with
-    | Obj_unboxed -> Format.fprintf formatter "unboxed"
-    | Obj_unboxed_but_should_be_boxed ->
+    | Obj_immediate -> Format.fprintf formatter "unboxed"
+    | Obj_immediate_but_should_be_boxed ->
       if V.int v = Some 0 then Format.fprintf formatter "unboxed/uninited"
       else Format.fprintf formatter "unboxed (?)"
     | Obj_boxed_traversable -> Format.fprintf formatter "boxed"
@@ -724,62 +813,63 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
   let print t ~scrutinee ~dwarf_type ~summary ~max_depth ~max_string_length
         ~cmt_file_search_path:_ ~formatter ~only_print_short_type
         ~only_print_short_value =
-    if debug then begin
-      Format.printf "Value_printer.print %a type %s\n%!"
-        V.print scrutinee dwarf_type
-    end;
-    let type_of_ident =
-      match Cmt_cache.find_cached_type t.cmt_cache ~cached_type:dwarf_type with
-      | Some type_expr_and_env -> Some type_expr_and_env
-      | None ->
-        Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
-          ~cmt_cache:t.cmt_cache
-    in
-    let is_unit =
-      (* Print variables (in particular parameters) of type [unit] even when
-         unavailable. *)
-      match type_of_ident with
-      | None -> false
-      | Some (ty, env) ->
-        let ty = Ctype.expand_head env ty in
-        match ty.desc with
-        | Tconstr (path, _, _) -> Path.same path Predef.path_unit
-        | _ -> false
-    in
-    (* Example of this null case: [Iphantom_read_var_field] on something
-       unavailable. *)
-    if V.is_null scrutinee
-      && (not only_print_short_type)
-      && (not is_unit)
-    then begin
-      (* CR mshinwell: This should still return a type even when not in
-         short-type mode, no? *)
-      Format.fprintf formatter "<optimized out>";
-      Format.pp_print_flush formatter ()
-    end else begin
-      if debug then Printf.printf "Value_printer.print entry point\n%!";
-      Format.fprintf formatter "@[";
-      let state = {
-        summary;
-        depth = 0;
-        max_depth;
-        max_string_length;
-        print_sig = true;
-        formatter;
-        (* CR mshinwell: pass this next one as an arg to this function *)
-        max_array_elements_etc_to_print = 10;
-        only_print_short_type;
-        only_print_short_value;
-      }
-      in
-      if only_print_short_type then begin
-        print_short_type t ~state ~type_of_ident scrutinee
-      end else if only_print_short_value then begin
-        print_short_value t ~state ~type_of_ident scrutinee
-      end else begin
-        print_value t ~state ~type_of_ident scrutinee
+    Clflags.real_paths := false;  (* Enable short-paths. *)
+    D.with_formatter_margins formatter ~summary (fun formatter ->
+      if debug then begin
+        Format.printf "Value_printer.print %a type %s\n%!"
+          V.print scrutinee dwarf_type
       end;
-      Format.fprintf formatter "@]";
-      Format.pp_print_flush formatter ()
-    end
+      let type_of_ident =
+        match Cmt_cache.find_cached_type t.cmt_cache ~cached_type:dwarf_type with
+        | Some type_expr_and_env -> Some type_expr_and_env
+        | None ->
+          Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
+            ~cmt_cache:t.cmt_cache
+      in
+      let is_unit =
+        (* Print variables (in particular parameters) of type [unit] even when
+           unavailable. *)
+        match type_of_ident with
+        | None -> false
+        | Some (ty, env) ->
+          let ty = Ctype.expand_head env ty in
+          match ty.desc with
+          | Tconstr (path, _, _) -> Path.same path Predef.path_unit
+          | _ -> false
+      in
+      (* Example of this null case: [Iphantom_read_var_field] on something
+         unavailable. *)
+      if V.is_null scrutinee
+        && (not only_print_short_type)
+        && (not is_unit)
+      then begin
+        (* CR mshinwell: This should still return a type even when not in
+           short-type mode, no? *)
+        Format.fprintf formatter "%s" optimized_out;
+        Format.pp_print_flush formatter ()
+      end else begin
+        if debug then Printf.printf "Value_printer.print entry point\n%!";
+        let state = {
+          summary;
+          depth = 0;
+          max_depth;
+          max_string_length;
+          print_sig = true;
+          formatter;
+          (* CR mshinwell: pass this next one as an arg to this function *)
+          max_array_elements_etc_to_print = 10;
+          only_print_short_type;
+          only_print_short_value;
+          operator_above = Nothing;
+        }
+        in
+        if only_print_short_type then begin
+          print_short_type t ~state ~type_of_ident scrutinee
+        end else if only_print_short_value then begin
+          print_short_value t ~state ~type_of_ident scrutinee
+        end else begin
+          print_value t ~state ~type_of_ident scrutinee
+        end;
+        Format.pp_print_flush formatter ()
+      end)
 end

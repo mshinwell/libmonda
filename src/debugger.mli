@@ -209,6 +209,14 @@ module type S_base = sig
   val formatter
      : stream
     -> Format.formatter
+
+  (** Calls the given function having set up the given [formatter] to
+      correspond to the current margin settings in the debugger. *)
+  val with_formatter_margins
+     : Format.formatter
+    -> summary:bool
+    -> (Format.formatter -> unit)
+    -> unit
 end
 
 module type S = sig
