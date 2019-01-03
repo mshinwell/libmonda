@@ -135,6 +135,11 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
 
   let rec print_value t ~state ~type_of_ident:type_expr_and_env v : unit =
     let formatter = state.formatter in
+    let env =
+      match type_expr_and_env with
+      | None -> None
+      | Some (_type_expr, env) -> Some env
+    in
     let type_info =
       Our_type_oracle.find_type_information t.type_oracle ~formatter
         ~type_expr_and_env ~scrutinee:v
@@ -174,7 +179,14 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         end
       | Char -> print_char t ~state v
       | Abstract path ->
-        Format.fprintf formatter "@{<address_colour><%s>@}" (Path.name path)
+        begin match env with
+        | None ->
+          Format.fprintf formatter "@{<address_colour><%s>@}" (Path.name path)
+        | Some env ->
+          Printtyp.wrap_printing_env ~error:false env (fun () ->
+            Format.fprintf formatter "@{<address_colour><%a>@}"
+              Printtyp.path path)
+        end
       | Array (ty, env) -> print_array t ~state ~ty ~env v
       | List (ty, env) ->
         print_list t ~state ~ty_and_env:(Some (ty, env)) v
@@ -198,6 +210,12 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | Object -> Format.fprintf formatter "<object>"
       | Abstract_tag -> Format.fprintf formatter "<block with Abstract_tag>"
       | Format6 -> print_format6 t ~state v
+      | Stdlib_set { env; element_ty; } ->
+        print_stdlib_set t state env ~element_ty v
+      | Stdlib_map { key_env; key_ty; datum_env; datum_ty; } ->
+        print_stdlib_map t state ~key_env ~key_ty ~datum_env ~datum_ty v
+      | Stdlib_hashtbl { key_env; key_ty; datum_env; datum_ty; } ->
+        print_stdlib_hashtbl t state ~key_env ~key_ty ~datum_env ~datum_ty v
       | Custom -> print_custom_block t ~state v
       | Unknown -> Format.fprintf formatter "unknown"
     end;
@@ -210,8 +228,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
   and print_multiple_without_type_info t ~state value =
     let formatter = state.formatter in
     (* If a value, that cannot be identified sensibly from its type,
-         looks like a (non-empty) list then we assume it is such.  It seems
-         more likely than a set of nested pairs. *)
+       looks like a (non-empty) list then we assume it is such.  It seems
+       more likely than a set of nested pairs. *)
     if value_looks_like_list t value then begin
       if state.summary then
         Format.fprintf formatter "@{<error_colour>[...]?@}"
@@ -228,7 +246,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       if need_outer_box then begin
         Format.fprintf formatter "@[<hov 2>"
       end;
-      Format.fprintf formatter "@{<error_colour>[tag_%d: " (V.tag_exn value);
+      Format.fprintf formatter "@{<error_colour>[tag-%d:@} " (V.tag_exn value);
       let original_size = V.size_exn value in
       let max_size =
         if state.summary then 2 else state.max_array_elements_etc_to_print
@@ -245,7 +263,9 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         | None -> Format.fprintf formatter "%s" optimized_out
         | Some field_value ->
           let state = descend state ~current_operator:Separator in
-          print_value t ~state ~type_of_ident:None field_value
+          Format.fprintf formatter "@{<error_colour>";
+          print_value t ~state ~type_of_ident:None field_value;
+          Format.fprintf formatter "@}"
         | exception D.Read_error ->
           Format.fprintf formatter "@{<error_colour><field %d read failed>@}"
             field
@@ -473,12 +493,13 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       in
       if state.depth = 0 && Array.length fields > 1 then begin
         Format.pp_print_newline formatter ();
-        Format.fprintf formatter "@[<v>  "
+        Format.fprintf formatter "@[<v 2>  "
       end;
       let nb_fields = V.size_exn v in
-      Format.fprintf formatter "@[<v 0>{ ";
+      Format.fprintf formatter "@[<hv 0>{ ";
+      Format.fprintf formatter "@[<hv 0>";
       for field_nb = 0 to nb_fields - 1 do
-        if field_nb > 0 then Format.fprintf formatter "@   ";
+        if field_nb > 0 then Format.fprintf formatter "@ ";
         try
           let (field_name, printer) = fields_helpers.(field_nb) in
           Format.fprintf formatter "@[<hov 2>@{<variable_name_colour>%s@}@ =@ "
@@ -494,7 +515,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           Format.fprintf formatter "@{<error_colour><could not read field %d>}"
             field_nb
       done;
-      Format.fprintf formatter "@ }@]";
+      Format.fprintf formatter "@]@;}@]";
       if state.depth = 0 && Array.length fields > 1 then begin
         Format.fprintf formatter "@]"
       end
@@ -728,6 +749,339 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
             identifier
             D.Target_memory.print_addr data_ptr
 
+  and print_stdlib_set t state env ~element_ty v =
+    let formatter = state.formatter in
+    if state.summary then begin
+      Format.fprintf formatter "{...}"
+    end else begin
+      Format.fprintf formatter
+        "@[<hov 2>@{<function_name_colour>Stdlib.Set@} { ";
+      let first = ref true in
+      let malformed () =
+        first := false;
+        Format.fprintf formatter " @{<error_colour><malformed>@}"
+      in
+      let one_elt_unavailable () =
+        first := false;
+        Format.fprintf formatter
+          " @{<error_colour><one element unavailable>@}"
+      in
+      let one_or_more_elts_unavailable () =
+        first := false;
+        Format.fprintf formatter
+          " @{<error_colour><one or more elements unavailable>@}"
+      in
+      let elt_state = descend state ~current_operator:Separator in
+      (* The type definition from stdlib/set.ml is:
+         type t = Empty | Node of {l:t; v:elt; r:t; h:int}
+      *)
+      let rec print v =
+        if not !first then begin
+          Format.fprintf formatter ",@ "
+        end;
+        if V.is_int v then begin
+          match V.int v with
+          | Some 0 -> ()  (* [Empty] *)
+          | _ -> malformed ()
+        end else begin
+          match V.tag_exn v with
+          | 0 ->  (* [Node] *)
+            begin match V.size_exn v with
+            | 4 ->
+              begin match V.field_exn v 0 with
+              | exception _ -> one_or_more_elts_unavailable ()
+              | None -> one_or_more_elts_unavailable ()
+              | Some left -> print left
+              end;
+              first := false;
+              begin match V.field_exn v 1 with
+              | exception _ -> one_elt_unavailable ()
+              | None -> one_elt_unavailable ()
+              | Some elt ->
+                print_value t ~state:elt_state
+                  ~type_of_ident:(Some (element_ty, env)) elt
+              end;
+              begin match V.field_exn v 2 with
+              | exception _ -> one_or_more_elts_unavailable ()
+              | None -> one_or_more_elts_unavailable ()
+              | Some right -> print right
+              end
+            | _ -> malformed ()
+            end
+          | _ -> malformed ()
+        end
+      in
+      print v;
+      if not !first then begin
+        Format.fprintf formatter " "
+      end;
+      Format.fprintf formatter "}@]"
+    end
+
+  and print_stdlib_map t state ~key_env ~key_ty ~datum_env ~datum_ty v =
+    let formatter = state.formatter in
+    if state.summary then begin
+      Format.fprintf formatter "{...}"
+    end else if V.is_int v && V.int v = Some 0 then begin
+      Format.fprintf formatter "(empty map)"
+    end else begin
+      Format.fprintf formatter
+        "@[<hv 0>@{<function_name_colour>Stdlib.Map@} { ";
+      Format.fprintf formatter "@[<hv 0>";
+(*
+      Format.pp_open_tbox formatter ();
+      Format.pp_set_tab formatter ();
+      Format.fprintf formatter "| key                           ";
+      Format.pp_set_tab formatter ();
+      Format.fprintf formatter "| value";
+      Format.pp_force_newline formatter ();
+(*      Format.pp_print_tab formatter ();*)
+      let next_row () =
+        Format.pp_force_newline formatter ()
+      in
+      let rule = "------------------------------" in
+      let rule_off () =
+        Format.fprintf formatter "%s%s" rule rule;
+        next_row ()
+      in
+      rule_off ();
+*)
+      let next_row () = () in
+      let malformed () =
+        Format.fprintf formatter " @{<error_colour><malformed>@}";
+        next_row ()
+      in
+      let min_num_bindings = ref 0 in
+      let one_binding_unavailable () =
+        incr min_num_bindings;
+        Format.fprintf formatter
+          " @{<error_colour><one binding unavailable>@}";
+        next_row ()
+      in
+      let one_or_more_bindings_unavailable () =
+        incr min_num_bindings;
+        Format.fprintf formatter
+          " @{<error_colour><one or more bindings unavailable>@}";
+        next_row ()
+      in
+      let binding_state = descend state ~current_operator:Separator in
+(*      let first = ref true in *)
+      (* The type definition from stdlib/map.ml is:
+         type 'a t = Empty | Node of {l:'a t; v:key; d:'a; r:'a t; h:int}
+      *)
+      let rec print v =
+        if V.is_int v then begin
+          match V.int v with
+          | Some 0 -> ()  (* [Empty] *)
+          | _ -> malformed ()
+        end else begin
+          match V.tag_exn v with
+          | 0 ->  (* [Node] *)
+            begin match V.size_exn v with
+            | 5 ->
+              begin match V.field_exn v 0 with
+              | exception _ -> one_or_more_bindings_unavailable ()
+              | None -> one_or_more_bindings_unavailable ()
+              | Some left -> print left
+              end;
+              begin match V.field_exn v 1 with
+              | exception _ -> one_binding_unavailable ()
+              | None -> one_binding_unavailable ()
+              | Some key ->
+                match V.field_exn v 2 with
+                | exception _ -> one_binding_unavailable ()
+                | None -> one_binding_unavailable ()
+                | Some datum ->
+                  if !min_num_bindings > 0 then begin
+                    Format.fprintf formatter "@ "
+                  end;
+                  incr min_num_bindings;
+(*
+                  let original_margin = Format.pp_get_margin formatter () in
+                  Format.pp_set_margin formatter (String.length rule - 2);
+                  Format.fprintf formatter "| ";
+                  Format.fprintf formatter "@[<v 0>";
+*)
+                  Format.fprintf formatter "@[<hov 2>";
+                  print_value t ~state:binding_state
+                    ~type_of_ident:(Some (key_ty, key_env)) key;
+                  Format.fprintf formatter " @{<file_name_colour>==>@}@ ";
+(*
+                  Format.fprintf formatter "@]";
+                  Format.pp_set_margin formatter original_margin;
+*)
+(*
+                  Format.pp_print_tab formatter ();
+                  Format.fprintf formatter "@]| ";
+*)
+(*
+                  let original_margin = Format.pp_get_margin formatter () in
+                  Format.fprintf formatter "@[<hov 2>";
+                  Format.pp_set_margin formatter (String.length rule - 2);
+*)
+                  print_value t ~state:binding_state
+                    ~type_of_ident:(Some (datum_ty, datum_env)) datum;
+                  Format.fprintf formatter ";@]";
+(*
+                  Format.fprintf formatter "@]";
+                  Format.pp_set_margin formatter original_margin;
+                  Format.pp_print_tab formatter ()
+*)
+              end;
+              begin match V.field_exn v 3 with
+              | exception _ -> one_or_more_bindings_unavailable ()
+              | None -> one_or_more_bindings_unavailable ()
+              | Some right -> print right
+              end
+            | _ -> malformed ()
+            end
+          | _ -> malformed ()
+        end
+      in
+      print v;
+(*
+      if !min_num_bindings > 1 then begin
+        Format.fprintf formatter " "
+      end;
+*)
+(*
+      rule_off ();
+      Format.pp_close_tbox formatter ()
+*)
+      Format.fprintf formatter "@]@;}@]";
+    end
+
+  and print_stdlib_hashtbl t state ~key_env ~key_ty ~datum_env ~datum_ty v =
+    let formatter = state.formatter in
+    (* The type definitions from stdlib/hashtbl.ml are:
+
+       type ('a, 'b) t =
+         { mutable size: int;
+           mutable data: ('a, 'b) bucketlist array;
+           mutable seed: int;
+           mutable initial_size: int;
+         }
+
+       and ('a, 'b) bucketlist =
+           Empty
+         | Cons of { mutable key: 'a;
+                     mutable data: 'b;
+                     mutable next: ('a, 'b) bucketlist }
+    *)
+    let binding_state = descend state ~current_operator:Separator in
+    let first = ref true in
+    let rec print_bucket_list bucket_list =
+      if V.is_int bucket_list then
+        match V.int bucket_list with
+        | Some 0 ->  (* [Empty] *)
+          ()
+        | _ ->
+          Format.fprintf formatter
+            "@{<error_colour>}<bucket list malformed>"
+      else
+        match V.tag_exn bucket_list with
+        | exception _ ->
+          Format.fprintf formatter
+            "@{<error_colour>}<bucket list tag read failed>"
+        | 0 ->  (* [Cons] *)
+          begin match V.size_exn bucket_list with
+          | exception _ ->
+            Format.fprintf formatter
+              "@{<error_colour>}<bucket list size read failed>"
+          | 3 ->
+            if not !first then begin
+              Format.fprintf formatter "@ ";
+            end;
+            first := false;
+            Format.fprintf formatter "@[<hov 2>";
+            begin match V.field_exn bucket_list 0 with
+            | exception Not_found ->
+              Format.fprintf formatter "@{<error_colour>}<key read failed>"
+            | None ->
+              Format.fprintf formatter "@{<error_colour>}<key unavailable>"
+            | Some key ->
+              print_value t ~state:binding_state
+                ~type_of_ident:(Some (key_ty, key_env)) key
+            end;
+            Format.fprintf formatter " @{<file_name_colour>==>@}@ ";
+            begin match V.field_exn bucket_list 1 with
+            | exception Not_found ->
+              Format.fprintf formatter "@{<error_colour>}<datum read failed>"
+            | None ->
+              Format.fprintf formatter "@{<error_colour>}<datum unavailable>"
+            | Some datum ->
+              print_value t ~state:binding_state
+                ~type_of_ident:(Some (datum_ty, datum_env)) datum
+            end;
+            Format.fprintf formatter "@]";
+            begin match V.field_exn bucket_list 2 with
+            | exception Not_found ->
+              Format.fprintf formatter "@{<error_colour>}<next read failed>"
+            | None ->
+              Format.fprintf formatter "@{<error_colour>}<next unavailable>"
+            | Some next ->
+              print_bucket_list next
+            end;
+          | _size ->
+            Format.fprintf formatter
+              "@{<error_colour>}<bucket list has wrong size>"
+          end
+        | _tag ->
+          Format.fprintf formatter
+            "@{<error_colour>}<bucket list has wrong tag>"
+    in
+    if state.summary then begin
+      Format.fprintf formatter "{...}"
+    end else begin
+      if not (V.is_block v) then begin
+        Format.fprintf formatter
+          "@{<error_colour><malformed Stdlib.Hashtbl (not a block)>@}"
+      end else begin
+        match V.tag_exn v with
+        | 0 ->
+          begin match V.size_exn v with
+          | 4 ->
+            begin match V.field_exn v 1 with
+            | exception _ ->
+              Format.fprintf formatter
+                "@{<error_colour><Stdlib.Hashtbl (target read failed)>@}"
+            | None ->
+              Format.fprintf formatter
+                "@{<error_colour><Stdlib.Hashtbl (unavailable)>@}"
+            | Some data ->
+              Format.fprintf formatter
+                "@[<hv 0>@{<function_name_colour>Stdlib.Hashtbl@} { ";
+              Format.fprintf formatter "@[<hv 0>";
+              begin match V.size_exn data with
+              | exception _ ->
+                Format.fprintf formatter
+                  "@{<error_colour><Stdlib.Hashtbl (target read failed \
+                    on size)>@}"
+              | size ->
+                for data_index = 0 to size - 1 do
+                  match V.field_exn data data_index with
+                  | exception _ ->
+                    Format.fprintf formatter
+                      "@{<error_colour>}<bucket list read failed>"
+                  | None ->
+                    Format.fprintf formatter
+                      "@{<error_colour>}<bucket list unavailable>"
+                  | Some bucket_list ->
+                    print_bucket_list bucket_list
+                done
+              end;
+              Format.fprintf formatter "@]@;}@]"
+            end
+          | _ ->
+            Format.fprintf formatter
+              "@{<error_colour><malformed Stdlib.Hashtbl (wrong size)>@}"
+          end
+        | _ ->
+          Format.fprintf formatter
+            "@{<error_colour><malformed Stdlib.Hashtbl (wrong tag)>@}"
+      end
+    end
+
   let print_short_value t ~state ~type_of_ident:type_expr_and_env v : unit =
     let formatter = state.formatter in
     match
@@ -767,6 +1121,9 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     | Object -> Format.fprintf formatter "object"
     | Abstract_tag -> Format.fprintf formatter "abstract-tag"
     | Format6 -> Format.fprintf formatter "format6"
+    | Stdlib_set _ -> Format.fprintf formatter "Stdlib.Set"
+    | Stdlib_map _ -> Format.fprintf formatter "Stdlib.Map"
+    | Stdlib_hashtbl _ -> Format.fprintf formatter "Stdlib.Hashtbl"
     | Custom -> Format.fprintf formatter "custom"
     | Unknown -> Format.fprintf formatter "unknown"
 
@@ -806,6 +1163,9 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     | Object -> Format.fprintf formatter "object"
     | Abstract_tag -> Format.fprintf formatter "abstract-tag"
     | Format6 -> Format.fprintf formatter "format6"
+    | Stdlib_set _ -> Format.fprintf formatter "Stdlib.Set"
+    | Stdlib_map _ -> Format.fprintf formatter "Stdlib.Map"
+    | Stdlib_hashtbl _ -> Format.fprintf formatter "Stdlib.Hashtbl"
     | Custom -> Format.fprintf formatter "custom"
     | Unknown -> Format.fprintf formatter "unknown"
 

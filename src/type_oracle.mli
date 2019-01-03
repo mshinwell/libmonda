@@ -73,6 +73,19 @@ module Result : sig
     | Object
     | Abstract_tag
     | Format6
+    | Stdlib_set of { env : Env.t; element_ty : Types.type_expr; }
+    | Stdlib_map of {
+        key_env : Env.t;
+        key_ty : Types.type_expr;
+        datum_env : Env.t;
+        datum_ty : Types.type_expr;
+      }
+    | Stdlib_hashtbl of {
+        key_env : Env.t;
+        key_ty : Types.type_expr;
+        datum_env : Env.t;
+        datum_ty : Types.type_expr;
+      }
     | Custom
     | Unknown
 

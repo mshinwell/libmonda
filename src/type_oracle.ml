@@ -4,7 +4,7 @@
 (*                                                                        *)
 (*                  Mark Shinwell, Jane Street Europe                     *)
 (*                                                                        *)
-(* Copyright (c) 2013--2016 Jane Street Group, LLC                        *)
+(* Copyright (c) 2013--2019 Jane Street Group, LLC                        *)
 (*                                                                        *)
 (* Permission is hereby granted, free of charge, to any person obtaining  *)
 (* a copy of this software and associated documentation files             *)
@@ -27,7 +27,7 @@
 (*                                                                        *)
 (**************************************************************************)
 
-[@@@ocaml.warning "+a-4-9-30-40-41-42"]
+[@@@ocaml.warning "+a-4-30-40-41-42"]
 
 let debug = Monda_debug.debug
 let print_path = Monda_debug.print_path
@@ -74,6 +74,19 @@ module Result = struct
     | Object
     | Abstract_tag
     | Format6
+    | Stdlib_set of { env : Env.t; element_ty : Types.type_expr; }
+    | Stdlib_map of {
+        key_env : Env.t;
+        key_ty : Types.type_expr;
+        datum_env : Env.t;
+        datum_ty : Types.type_expr;
+      }
+    | Stdlib_hashtbl of {
+        key_env : Env.t;
+        key_ty : Types.type_expr;
+        datum_env : Env.t;
+        datum_ty : Types.type_expr;
+      }
     | Custom
     | Unknown
 
@@ -102,6 +115,9 @@ module Result = struct
     | Object -> "Object"
     | Abstract_tag -> "Abstract_tag"
     | Format6 -> "Format6"
+    | Stdlib_set _ -> "Stdlib.Set"
+    | Stdlib_map _ -> "Stdlib.Map"
+    | Stdlib_hashtbl _ -> "Stdlib.Hashtbl"
     | Custom -> "Custom"
     | Unknown -> "Unknown"
 end
@@ -177,6 +193,68 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | Absent -> Some Unknown
     else
       None
+
+  (* CR-someday mshinwell: Replace this with proper custom printer support. *)
+  let check_special_cases _t env (path : Path.t) ~args : Result.t option =
+    match path with
+    | Pdot (Papply (Pdot (Pident mod_name, functor_name, _), applied_to),
+        "t", _) ->
+      begin match Ident.name mod_name, functor_name with
+      | "Stdlib__set", "Make" ->
+        begin match args with
+        | [] ->
+          let element_ty_path : Path.t =
+            (* [applied_to] should satisfy [Set.OrderedType]. *)
+            Pdot (applied_to, "t", 0)
+          in
+          let type_desc : Types.type_desc =
+            Tconstr (element_ty_path, [], ref Types.Mnil)
+          in
+          let element_ty = Btype.newgenty type_desc in
+          Some (Stdlib_set { env; element_ty; })
+        | _ -> None
+        end
+      | "Stdlib__map", "Make" ->
+        begin match args with
+        | [datum_ty] ->
+          let key_ty_path : Path.t =
+            (* [applied_to] should satisfy [Map.OrderedType]. *)
+            Pdot (applied_to, "t", 0)
+          in
+          let type_desc : Types.type_desc =
+            Tconstr (key_ty_path, [], ref Types.Mnil)
+          in
+          let key_ty = Btype.newgenty type_desc in
+          Some (Stdlib_map {
+            key_env = env;
+            key_ty;
+            datum_env = env;
+            datum_ty;
+          })
+        | _ -> None
+        end
+      | "Stdlib__hashtbl", "Make" ->
+        begin match args with
+        | [datum_ty] ->
+          let key_ty_path : Path.t =
+            (* [applied_to] should satisfy [Hashtbl.HashedType]. *)
+            Pdot (applied_to, "t", 0)
+          in
+          let type_desc : Types.type_desc =
+            Tconstr (key_ty_path, [], ref Types.Mnil)
+          in
+          let key_ty = Btype.newgenty type_desc in
+          Some (Stdlib_hashtbl {
+            key_env = env;
+            key_ty;
+            datum_env = env;
+            datum_ty;
+          })
+        | _ -> None
+        end
+      | _, _ -> None
+      end
+    | _ -> None
 
   let rec examine_type_expr t ~formatter ~paths_visited_so_far ~type_expr ~env
         ~scrutinee : Result.t =
@@ -312,13 +390,15 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           end
         | Types.Type_abstract ->
           if List.mem path ~set:paths_visited_so_far then begin
-            if debug then
-              Printf.printf "loop resolving %s\n%!" (print_path path);
+            if debug then begin
+              Printf.printf "loop resolving %s\n%!" (print_path path)
+            end;
             Abstract path  (* fail gracefully *)
-          end else
+          end else begin
             let paths_visited_so_far = path::paths_visited_so_far in
             discover_manifest t ~formatter ~paths_visited_so_far ~type_expr
               ~path ~args ~env ~scrutinee
+          end
         | Types.Type_record (field_decls, record_repr) ->
           begin match scrutinee with
           | Absent | Boxed _ ->
@@ -342,15 +422,18 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
   (* CR-soon mshinwell: try removing [type_expr], probably redundant *)
   and discover_manifest t ~formatter ~paths_visited_so_far ~type_expr ~path
         ~args ~env ~scrutinee : Result.t =
-    let manifest =
-      Abstraction_breaker.find_manifest_of_abstract_type t.abstraction_breaker
+    match check_special_cases t env path ~args with
+    | Some result -> result
+    | None ->
+      let manifest =
+        Abstraction_breaker.find_manifest_of_abstract_type t.abstraction_breaker
           ~formatter ~path ~env
-    in
-    match manifest with
-    | None -> Abstract path  (* couldn't find manifest; fail gracefully *)
-    | Some (path, type_decl, env) ->
-      examine_type_decl t ~formatter ~paths_visited_so_far ~type_expr ~env
-        ~path ~args ~type_decl ~scrutinee
+      in
+      match manifest with
+      | None -> Abstract path  (* couldn't find manifest; fail gracefully *)
+      | Some (path, type_decl, env) ->
+        examine_type_decl t ~formatter ~paths_visited_so_far ~type_expr ~env
+          ~path ~args ~type_decl ~scrutinee
 
   let find_type_information t ~formatter ~type_expr_and_env ~scrutinee =
     if debug then begin
