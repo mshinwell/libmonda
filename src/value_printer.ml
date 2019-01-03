@@ -228,7 +228,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       if need_outer_box then begin
         Format.fprintf formatter "@[<hov 2>"
       end;
-      Format.fprintf formatter "@{<error_colour>[tag %d: " (V.tag_exn value);
+      Format.fprintf formatter "@{<error_colour>[tag_%d: " (V.tag_exn value);
       let original_size = V.size_exn value in
       let max_size =
         if state.summary then 2 else state.max_array_elements_etc_to_print
@@ -239,7 +239,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       in
       for field = 0 to size - 1 do
         if field > 0 then begin
-          Format.fprintf formatter "@ "
+          Format.fprintf formatter ";@ "
         end;
         match V.field_exn value field with
         | None -> Format.fprintf formatter "%s" optimized_out

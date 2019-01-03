@@ -223,6 +223,12 @@ monda_ocaml_specific_compilation_unit_info(caml_value v_unit_name)
   struct objfile* objfile;
   struct compunit_symtab* cu;
 
+  /* CR mshinwell: This could be improved, to stop reading once we find the
+     CU, or perhaps even better than that somehow. */
+  ALL_OBJFILES(objfile) {
+    objfile->sf->qf->expand_all_symtabs (objfile);
+  }
+
   ALL_COMPUNITS(objfile, cu) {
     if (cu->ocaml.unit_name != NULL
           && strcmp(cu->ocaml.unit_name, String_val(v_unit_name)) == 0) {

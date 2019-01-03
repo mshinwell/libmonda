@@ -67,13 +67,28 @@ module Make (D : Debugger.S) = struct
   let load_cmt compilation_unit =
     let unit_name = Compilation_unit.get_persistent_ident compilation_unit in
     match D.ocaml_specific_compilation_unit_info ~unit_name with
-    | None -> None
+    | None ->
+      if Monda_debug.debug then begin
+        Format.eprintf "Couldn't get OCaml-specific CU info for %a"
+          Ident.print unit_name
+      end;
+      None
     | Some { prefix_name; _ } ->
       let filename = (Filename.basename prefix_name) ^ ".cmt" in
       let dirname = Filename.dirname prefix_name in
       match D.find_and_open ~filename ~dirname:(Some dirname) with
-      | None -> None
+      | None ->
+        if Monda_debug.debug then begin
+          Printf.eprintf ".cmt file %s could not be found/opened by \
+              debugger\n%!"
+            filename;
+        end;
+        None
       | Some (filename, cmt_chan) ->
+        if Monda_debug.debug then begin
+          Printf.eprintf ".cmt file %s found by debugger and opened\n%!"
+            filename;
+        end;
         Cmt_file.load_from_channel_then_close ~filename cmt_chan
           ~add_to_load_path
 end
