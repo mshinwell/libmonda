@@ -165,6 +165,7 @@ module type S_base = sig
     unit_name : Ident.t;
     config_digest : Digest.t;
     prefix_name : string;
+    linker_dirs : string list;
   }
 
   (** Extract values for the given compilation unit that are transmitted via

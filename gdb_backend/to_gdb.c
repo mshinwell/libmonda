@@ -135,6 +135,7 @@ monda_compilation_directories_for_source_file(caml_value v_file)
 extern "C" caml_value
 monda_add_search_path(caml_value v_dirname)
 {
+  /* CR mshinwell: Should this really be using [source_path]? */
   add_path(String_val(v_dirname), &source_path, 0);
   return Val_unit;
 }
@@ -197,7 +198,7 @@ build_ocaml_specific_compilation_unit_info(struct compunit_symtab* cu)
   CAMLparam0();
   CAMLlocal1(v_comp_unit_info);
 
-  v_comp_unit_info = caml_alloc(4, 0);
+  v_comp_unit_info = caml_alloc(5, 0);
 
   Store_field(v_comp_unit_info, 0,
               copy_string_or_none(cu->ocaml.compiler_version));
@@ -210,6 +211,9 @@ build_ocaml_specific_compilation_unit_info(struct compunit_symtab* cu)
 
   Store_field(v_comp_unit_info, 3,
               copy_string_or_none(cu->ocaml.prefix_name));
+
+  Store_field(v_comp_unit_info, 4,
+              copy_string_or_none(cu->ocaml.linker_dirs));
 
   CAMLreturn(v_comp_unit_info);
 }

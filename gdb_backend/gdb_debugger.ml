@@ -145,6 +145,7 @@ module Gdb_indirect = struct
     unit_name : string option;
     config_digest : string option;
     prefix_name : string option;
+    linker_dirs : string option;
   }
 
   external raw_ocaml_specific_compilation_unit_info
@@ -424,6 +425,7 @@ type ocaml_specific_compilation_unit_info = {
   unit_name : Ident.t;
   config_digest : Digest.t;
   prefix_name : string;
+  linker_dirs : string list;
 }
 
 let ocaml_specific_compilation_unit_info ~unit_name
@@ -451,11 +453,18 @@ let ocaml_specific_compilation_unit_info ~unit_name
     with
     | Some compiler_version, Some unit_name, Some config_digest,
         Some prefix_name ->
+      let linker_dirs =
+        match unit_info.linker_dirs with
+        | None -> []
+        | Some linker_dirs ->
+          Dwarf_name_laundry.demangle_linker_dirs linker_dirs
+      in
       Some {
         compiler_version;
         unit_name = Ident.create_persistent unit_name;
         config_digest;
         prefix_name;
+        linker_dirs;
       }
     | _, _, _, _ -> None
 

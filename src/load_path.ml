@@ -64,7 +64,33 @@ module Make (D : Debugger.S) = struct
   let () =
     Env.Persistent_signature.load := load_cmi
 
+  let have_added_linker_dirs_to_path = ref false
+
+  let maybe_add_linker_dirs_to_path () =
+    if not !have_added_linker_dirs_to_path then begin
+      let unit_name =
+        Compilation_unit.get_persistent_ident Compilation_unit.startup
+      in
+      match D.ocaml_specific_compilation_unit_info ~unit_name with
+      | None ->
+        if Monda_debug.debug then begin
+          Format.eprintf "Couldn't get OCaml-specific CU info for %a"
+            Ident.print unit_name
+        end
+      | Some { linker_dirs; _ } ->
+        if Monda_debug.debug then begin
+          Format.eprintf "Linker dirs from the startup CU (%s) are: %a\n"
+            (Ident.name unit_name)
+            (Format.pp_print_list ~pp_sep:Format.pp_print_space
+              Format.pp_print_string)
+            linker_dirs
+        end;
+        add_to_load_path linker_dirs;
+        have_added_linker_dirs_to_path := true
+    end
+
   let load_cmt compilation_unit =
+    maybe_add_linker_dirs_to_path ();
     let unit_name = Compilation_unit.get_persistent_ident compilation_unit in
     match D.ocaml_specific_compilation_unit_info ~unit_name with
     | None ->
@@ -73,9 +99,11 @@ module Make (D : Debugger.S) = struct
           Ident.print unit_name
       end;
       None
-    | Some { prefix_name; _ } ->
+    | Some { prefix_name; linker_dirs; _ } ->
       let filename = (Filename.basename prefix_name) ^ ".cmt" in
       let dirname = Filename.dirname prefix_name in
+      add_to_load_path [dirname];
+      add_to_load_path linker_dirs;
       match D.find_and_open ~filename ~dirname:(Some dirname) with
       | None ->
         if Monda_debug.debug then begin
