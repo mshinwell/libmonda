@@ -234,7 +234,7 @@ printf("monda_evaluate '%s'\n", expr);fflush(stdout);
   v_result = caml_callback3(*cb, v_expr, v_search_path, v_stream);
 
   if (v_result == Val_unit /* Failure */) {
-    CAMLreturn((CORE_ADDR) 0);  /* CR mshinwell: suboptimal? */
+    CAMLreturn((CORE_ADDR) -1);  /* CR mshinwell: suboptimal? */
   }
   /*
   printf("monda_evaluate is returning %p, type name '%s'\n",
@@ -246,7 +246,7 @@ printf("monda_evaluate '%s'\n", expr);fflush(stdout);
   *type_name_out = xstrdup(String_val(Field(v_result, 1)));
 
   CAMLreturn(
-    failed ? (CORE_ADDR) 0 : (CORE_ADDR) Nativeint_val(Field(v_result, 0)));
+    failed ? (CORE_ADDR) -1 : (CORE_ADDR) Nativeint_val(Field(v_result, 0)));
 }
 
 extern "C" void
