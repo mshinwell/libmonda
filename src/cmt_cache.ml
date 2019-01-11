@@ -4,7 +4,7 @@
 (*                                                                        *)
 (*                  Mark Shinwell, Jane Street Europe                     *)
 (*                                                                        *)
-(* Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
+(* Copyright (c) 2013--2019 Jane Street Group, LLC                        *)
 (*                                                                        *)
 (* Permission is hereby granted, free of charge, to any person obtaining  *)
 (* a copy of this software and associated documentation files             *)
@@ -31,7 +31,8 @@ module Make (LP : Load_path_intf.S) = struct
   type t = {
     cache : Cmt_file.t Compilation_unit.Tbl.t;
     mutable cached_type_counter : int;
-    cached_types : (int, Types.type_expr * Env.t) Hashtbl.t;
+    (* CR mshinwell: Use something better than a polymorphic hash table *)
+    cached_types : (int, Cmt_file.core_or_module_type * Env.t) Hashtbl.t;
   }
 
   let create () =
@@ -51,12 +52,16 @@ module Make (LP : Load_path_intf.S) = struct
       end
     | cmt -> Some cmt
 
-  let cache_type t ~type_expr ~env =
+  let cache_type t (ty : Cmt_file.core_or_module_type) env =
     let id = t.cached_type_counter in
     t.cached_type_counter <- t.cached_type_counter + 1;
     assert (not (Hashtbl.mem t.cached_types id));
-    let type_expr = Ctype.correct_levels type_expr in
-    Hashtbl.replace t.cached_types id (type_expr, env);
+    let ty : Cmt_file.core_or_module_type =
+      match ty with
+      | Core type_expr -> Core (Ctype.correct_levels type_expr)
+      | Module _ -> ty
+    in
+    Hashtbl.replace t.cached_types id (ty, env);
     "__ocamlcached " ^ string_of_int id
 
   let find_cached_type t ~cached_type =

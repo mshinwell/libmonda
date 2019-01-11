@@ -123,21 +123,21 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
 
   type _ lvalue_or_rvalue =
     | Lvalue : D.target_addr lvalue_or_rvalue
-    | Rvalue : (D.Obj.t * Types.type_expr * Env.t) lvalue_or_rvalue
+    | Rvalue : (D.Obj.t * Cmt_file.core_or_module_type * Env.t) lvalue_or_rvalue
 
   let evaluate_given_starting_point (type obj_or_addr) t ~path
-        ~type_expr_and_env ~(lvalue_or_rvalue : obj_or_addr lvalue_or_rvalue)
+        type_and_env ~(lvalue_or_rvalue : obj_or_addr lvalue_or_rvalue)
         ~must_be_mutable ~formatter v : obj_or_addr option =
-    match type_expr_and_env with
+    match type_and_env with
     | None -> None
-    | Some (type_expr, env) ->
-      let rec find_component ~path ~type_expr ~env ~previous_was_mutable
+    | Some (ty, env) ->
+      let rec find_component ~path ~ty ~env ~previous_was_mutable
             ~(address_of_v : D.target_addr option) (v : D.Obj.t)
             : obj_or_addr option =
         let oracle_result =
           let scrutinee = D.Value.create_exists_on_target v in
           Our_type_oracle.find_type_information t.type_oracle ~formatter
-            ~type_expr_and_env:(Some (type_expr, env)) ~scrutinee
+            (Some (ty, env)) ~scrutinee
         in
         match path with
         | Identity ->
@@ -146,7 +146,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           end else begin
             match lvalue_or_rvalue with
             | Lvalue -> address_of_v
-            | Rvalue -> Some (v, type_expr, env)
+            | Rvalue -> Some (v, ty, env)
           end
         | Module _ ->
           (* CR-soon mshinwell: fill this in for toplevel accesses, e.g.
@@ -183,7 +183,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                   | Immutable -> false
                   | Mutable -> true
                 in
-                find_component ~path:next ~type_expr:field_type ~env
+                find_component ~path:next ~ty:(Cmt_file.Core field_type) ~env
                   ~previous_was_mutable:field_is_mutable
                   ~address_of_v:(Some address_of_field)
                   field
@@ -201,7 +201,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
               let address_of_element = D.Obj.address_of_field v index in
               let element = D.Obj.field_exn v index in
               let element_type = element_types.(index) in
-              find_component ~path:next ~type_expr:element_type ~env
+              find_component ~path:next ~ty:(Cmt_file.Core element_type) ~env
                 ~previous_was_mutable:false
                 ~address_of_v:(Some address_of_element)
                 element
@@ -213,7 +213,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
             else
               let address_of_element = D.Obj.address_of_field v index in
               let element = D.Obj.field_exn v index in
-              find_component ~path:next ~type_expr:element_type ~env
+              find_component ~path:next ~ty:(Cmt_file.Core element_type) ~env
                 ~previous_was_mutable:false
                 ~address_of_v:(Some address_of_element)
                 element
@@ -230,15 +230,15 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
             else if index = 0 then
               let address_of_element = D.Obj.address_of_field v 0 in
               let element = D.Obj.field_exn v 0 in
-              find_component ~path:next ~type_expr:element_type ~env
-                ~previous_was_mutable:false
+              find_component ~path:next ~ty:(Cmt_file.Core element_type)
+                ~env ~previous_was_mutable:false
                 ~address_of_v:(Some address_of_element)
                 element
             else
               let address_of_tail = D.Obj.address_of_field v 1 in
               let tail = D.Obj.field_exn v 1 in
               let path = Indexed { index = index - 1; next; } in
-              find_component ~path ~type_expr ~env
+              find_component ~path ~ty ~env
                 ~previous_was_mutable:false
                 ~address_of_v:(Some address_of_tail)
                 tail
@@ -269,14 +269,14 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                   let address_of_element = D.Obj.address_of_field v index in
                   let element = D.Obj.field_exn v index in
                   let element_type = ctor_arg_types.(index) in
-                  find_component ~path:next ~type_expr:element_type ~env
-                    ~previous_was_mutable:false
+                  find_component ~path:next ~ty:(Cmt_file.Core element_type)
+                    ~env ~previous_was_mutable:false
                     ~address_of_v:(Some address_of_element)
                     element
           | _ -> None
           end
       in
-      find_component ~path ~type_expr ~previous_was_mutable:false
+      find_component ~path ~ty ~previous_was_mutable:false
         ~address_of_v:None ~env v
 
   (* CR mshinwell: Remove search path arg *)
@@ -285,12 +285,12 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     (* CR mshinwell: When in function Foo.f then we should search for "Foo.bar"
        when looking for "bar", if it isn't a local or arg. *)
     let found ~starting_point ~dwarf_type ~rest_of_path =
-      let type_expr_and_env =
-        Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
+      let type_and_env =
+        Type_helper.type_and_env_from_dwarf_type ~dwarf_type
           ~cmt_cache:t.cmt_cache
       in
       evaluate_given_starting_point t ~path:rest_of_path
-        ~type_expr_and_env ~lvalue_or_rvalue ~must_be_mutable
+        type_and_env ~lvalue_or_rvalue ~must_be_mutable
         ~formatter starting_point
     in
     match parse ~path with
@@ -314,6 +314,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         (* Note that [find_global_symbol] always returns an rvalue, even in
            the case of inconstant ("Initialize_symbol") bindings.  (See
            comments in asmcomp/debug/dwarf.ml in the compiler.) *)
+        (* CR mshinwell: delete "inconstant" stuff -- Initialize_symbol
+           no longer generates DWARF *)
         match D.find_global_symbol ~name:module_component_path with
         | Not_found -> None
         | Found (starting_point, dwarf_type) ->

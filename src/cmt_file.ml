@@ -51,6 +51,10 @@ end
 
 module T = Typedtree
 
+type core_or_module_type =
+  | Core of Types.type_expr
+  | Module of Types.module_type
+
 type t = {
   cmt_infos : Cmt_format.cmt_infos;
   (* CR mshinwell: we can almost certainly do better than a map from
@@ -58,24 +62,40 @@ type t = {
   (* CR trefis for mshinwell: in ocp-index, they use a trie from names to
       locations, you might want to do the same (but for types instead of
       positions, ofc) here. *)
-  idents_to_types : (Types.type_expr * Env.t) String.Map.t;
+  idents_to_types : (core_or_module_type * Env.t) String.Map.t;
 }
+
+let insert_module_from_expr (idents_to_types, app_points) id
+      (mod_expr : T.module_expr) =
+  let ty = mod_expr.mod_type in
+  let env = mod_expr.mod_env in
+  let idents_to_types =
+    String.Map.add (Ident.unique_name id)
+      (Module ty, env)
+      idents_to_types
+  in
+  if debug then begin
+    Format.eprintf "Recording binding of module with unique name %S\n%!"
+      (Ident.unique_name id)
+  end;
+  idents_to_types, app_points
+
+let insert_module_from_binding maps (module_binding : T.module_binding) =
+  insert_module_from_expr maps module_binding.mb_id module_binding.mb_expr
 
 let rec process_pattern ~(pat : T.pattern) ~idents_to_types =
   match pat.pat_desc with
   | Tpat_var (ident, _loc) ->
-(*
     if debug then begin
       Printf.printf "process_pattern: Tpat_var %s\n%!" (Ident.unique_name ident)
     end;
-*)
     String.Map.add (Ident.unique_name ident)
-      (pat.pat_type, pat.pat_env)
+      (Core pat.pat_type, pat.pat_env)
       idents_to_types
   | Tpat_alias (pat, ident, _loc) ->
     let idents_to_types =
       String.Map.add (Ident.unique_name ident)
-        (pat.pat_type, pat.pat_env)
+        (Core pat.pat_type, pat.pat_env)
         idents_to_types
     in
     process_pattern ~pat ~idents_to_types
@@ -118,7 +138,7 @@ and process_expression ~(exp : T.expression)
       match cases with
       | case::_ ->
         String.Map.add (Ident.unique_name ident)
-          (case.T.c_lhs.T.pat_type,
+          (Core case.T.c_lhs.T.pat_type,
             case.T.c_lhs.T.pat_env)
           idents_to_types
       | _ -> idents_to_types
@@ -185,7 +205,7 @@ and process_expression ~(exp : T.expression)
     process_expression ~exp:e2 acc
   | Texp_for (ident, _, e1, e2, _, e3) ->
     let idents_to_types =
-      String.Map.add (Ident.unique_name ident) (e1.exp_type, e1.exp_env)
+      String.Map.add (Ident.unique_name ident) (Core e1.exp_type, e1.exp_env)
         idents_to_types
     in
     let acc = process_expression ~exp:e1 (idents_to_types, app_points) in
@@ -205,15 +225,10 @@ and process_expression ~(exp : T.expression)
     | None -> acc
     | Some exp -> process_expression ~exp acc
     end
-  | Texp_letmodule (_ident, _str_loc, _mod_expr, exp) ->
-    (* TODO: handle [mod_expr] *)
-(*
-    let idents_to_types =
-      String.Map.add (Ident.unique_name ident)
-        (mod_expr.mod_type, mod_expr.mod_env) idents_to_types
-    in
-*)
-    process_expression ~exp init
+  | Texp_letmodule (id, _str_loc, mod_expr, exp) ->
+    let maps = insert_module_from_expr init id mod_expr in
+    let maps = process_module_expr ~mod_expr maps in
+    process_expression ~exp maps
   (* CR mshinwell: this needs finishing, yuck *)
   | Texp_ident _
   | Texp_constant _
@@ -244,7 +259,7 @@ and process_value_binding ~value_binding init =
     process_pattern ~pat ~idents_to_types, app_points
   )
 
-let rec process_module_expr ~(mod_expr : T.module_expr)
+and process_module_expr ~(mod_expr : T.module_expr)
       ((idents_to_types, app_points) as maps) =
   match mod_expr.mod_desc with
   | Tmod_ident _ -> maps
@@ -269,12 +284,15 @@ and process_implementation ~(structure : T.structure)
           | Tstr_eval (exp, _) ->
             process_expression ~exp maps
           | Tstr_module module_binding ->
+            let maps = insert_module_from_binding maps module_binding in
             process_module_expr ~mod_expr:module_binding.mb_expr maps
           | Tstr_recmodule lst ->
-            List.fold_left lst ~init:(idents_to_types, app_points) ~f:(
-              fun maps (module_binding : T.module_binding) ->
-                process_module_expr ~mod_expr:module_binding.mb_expr maps
-            )
+            List.fold_left lst ~init:maps
+              ~f:(fun maps (module_binding : T.module_binding) ->
+                let maps = insert_module_from_binding maps module_binding in
+                process_module_expr ~mod_expr:module_binding.mb_expr maps)
+          | Tstr_include { incl_mod; _ } ->
+            process_module_expr ~mod_expr:incl_mod maps
           | Tstr_primitive _
           | Tstr_type _
           | Tstr_exception _
@@ -282,7 +300,6 @@ and process_implementation ~(structure : T.structure)
           | Tstr_open _
           | Tstr_class _
           | Tstr_class_type _
-          | Tstr_include _
           | Tstr_attribute _
           | Tstr_typext _ -> maps)
 
@@ -292,7 +309,7 @@ let create_idents_to_types_map ~(cmt_infos : Cmt_format.cmt_infos) =
   | Packed _
   | Interface _
   (* CR mshinwell: find out what "partial" implementations and
-      interfaces are, and fix cmt_format.mli so it tells you *)
+     interfaces are, and fix cmt_format.mli so it tells you *)
   | Partial_implementation _
   | Partial_interface _ -> String.Map.empty, LocTable.empty
   | Implementation structure ->
@@ -368,6 +385,9 @@ let load_from_channel_then_close ~filename chan ~add_to_load_path =
 
 let type_of_ident t ~name ~stamp =
   let unique_name = Printf.sprintf "%s_%d" name stamp in
+  if debug then begin
+    Format.eprintf "Trying to find unique name %S\n%!" unique_name;
+  end;
   try Some (String.Map.find unique_name t.idents_to_types)
   with Not_found -> begin
     if debug then Printf.printf "type_of_ident failed\n%!";

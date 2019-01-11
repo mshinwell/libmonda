@@ -34,10 +34,10 @@ module type S = sig
 
   val load : t -> Compilation_unit.t -> Cmt_file.t option
 
-  val cache_type : t -> type_expr:Types.type_expr -> env:Env.t -> string
+  val cache_type : t -> Cmt_file.core_or_module_type -> Env.t -> string
 
   val find_cached_type
      : t
     -> cached_type:string
-    -> (Types.type_expr * Env.t) option
+    -> (Cmt_file.core_or_module_type * Env.t) option
 end

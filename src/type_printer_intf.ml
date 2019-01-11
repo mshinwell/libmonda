@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2016--2019 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2013--2019 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -27,8 +27,22 @@
 (*                                                                         *)
 (***************************************************************************)
 
-[@@@ocaml.warning "+a-4-30-40-41-42"]
+module type S = sig
+  module Cmt_cache : Cmt_cache_intf.S
 
-module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S)
-  : Type_helper_intf.S
-      with module Cmt_cache := Cmt_cache
+  type t
+
+  val create : Cmt_cache.t -> t
+
+  val print_given_type_and_env
+     : ?always_print:unit
+    -> Format.formatter
+    -> (Cmt_file.core_or_module_type * Env.t) option
+    -> bool
+
+  val print
+     : t
+    -> Format.formatter
+    -> dwarf_type:string
+    -> bool
+end

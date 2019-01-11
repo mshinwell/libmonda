@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2013--2019 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -36,16 +36,21 @@ let debug = Monda_debug.debug
 
 let optimized_out = "<unavailable>"
 
-module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
+module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S)
+      (Type_helper : Type_helper_intf.S
+        with module Cmt_cache := Cmt_cache)
+      (Type_printer : Type_printer_intf.S
+        with module Cmt_cache := Cmt_cache) =
+struct
   (* CR mshinwell: Remove "our" *)
   module Our_type_oracle = Type_oracle.Make (D) (Cmt_cache)
   module V = D.Value
   module Our_value_copier = Value_copier.Make (D)
-  module Type_helper = Type_helper.Make (D) (Cmt_cache)
 
   type t = {
-    type_oracle : Our_type_oracle.t;
     cmt_cache : Cmt_cache.t;
+    type_oracle : Our_type_oracle.t;
+    type_printer : Type_printer.t;
   }
 
   type operator =
@@ -73,9 +78,10 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       operator_above = current_operator;
     }
 
-  let create ~cmt_cache =
+  let create cmt_cache type_printer =
     { type_oracle = Our_type_oracle.create ~cmt_cache;
       cmt_cache;
+      type_printer;
     }
 
   let rec value_looks_like_list t value =
@@ -108,41 +114,16 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       Format.fprintf formatter ")"
     end
 
-  let print_type_of_value _t ~state ~type_expr_and_env =
-    (* In the cases where the type expression is absent or unhelpful then
-       we could print, e.g. " : string" when the value has tag [String_tag].
-       However, this might be misleading, in the case where the value is
-       of some abstract type (in this example, with a manifest of [string])
-       and the user knows the abstract type rather than the manifest.
-       What we will do, however, is suppress printing of e.g. " : 'a" since
-       it would only seem to serve to clutter.
-    *)
-    let formatter = state.formatter in
-    match type_expr_and_env with
-    | None -> ()
-    | Some (type_expr, env) ->
-      let type_expr = Btype.repr type_expr in
-      match type_expr.desc with
-      | Tvar _ | Tunivar _ | Tnil | Tlink _
-      | Tsubst _ -> ()  (* ignore unhelpful types, as above *)
-      | Tarrow _ | Ttuple _ | Tconstr _ | Tobject _ | Tfield _ | Tvariant _
-      | Tpoly _ | Tpackage _ ->
-        Format.fprintf formatter " : @{<type_colour>";
-        Printtyp.wrap_printing_env ~error:false env (fun () ->
-          Printtyp.reset_and_mark_loops type_expr;
-          Printtyp.type_expr formatter type_expr);
-        Format.fprintf formatter "@}"
-
-  let rec print_value t ~state ~type_of_ident:type_expr_and_env v : unit =
+  let rec print_value t ~state ~type_of_ident:type_and_env v : unit =
     let formatter = state.formatter in
     let env =
-      match type_expr_and_env with
+      match type_and_env with
       | None -> None
-      | Some (_type_expr, env) -> Some env
+      | Some (_ty, env) -> Some env
     in
     let type_info =
       Our_type_oracle.find_type_information t.type_oracle ~formatter
-        ~type_expr_and_env ~scrutinee:v
+        type_and_env ~scrutinee:v
     in
     if (state.summary && state.depth > 2)
         || state.depth > state.max_depth then begin
@@ -189,7 +170,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         end
       | Array (ty, env) -> print_array t ~state ~ty ~env v
       | List (ty, env) ->
-        print_list t ~state ~ty_and_env:(Some (ty, env)) v
+        print_list t ~state ~ty_and_env:(Some (Cmt_file.Core ty, env)) v
       | Ref (ty, env) -> print_ref t ~state ~ty ~env v
       | Tuple (tys, env) -> print_tuple t ~state ~tys ~env v
       | Constant_constructor (name, kind) ->
@@ -222,7 +203,11 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     if state.print_sig then begin
       match type_info with
       | Unit -> ()
-      | _ -> print_type_of_value t ~state ~type_expr_and_env
+      | _ ->
+        let (_type_printed : bool) =
+          Type_printer.print_given_type_and_env formatter type_and_env
+        in
+        ()
     end
 
   and print_multiple_without_type_info t ~state value =
@@ -376,7 +361,9 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     let size_ok = Array.length component_types = V.size_exn v in
     let printers =
       Array.map (fun ty state v ->
-          let type_of_ident = if size_ok then Some (ty, env) else None in
+          let type_of_ident =
+            if size_ok then Some (Cmt_file.Core ty, env) else None
+          in
           print_value t ~state ~type_of_ident v)
         component_types
     in
@@ -390,7 +377,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     let size = V.size_exn v in
     let printers =
       Array.init size (fun _ty state v ->
-        let type_of_ident = Some (ty, env) in
+        let type_of_ident = Some (Cmt_file.Core ty, env) in
         print_value t ~state ~type_of_ident v)
     in
     print_multiple_with_type_info t ~state ~printers
@@ -454,7 +441,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | None -> Format.fprintf formatter "%s" optimized_out
       | Some contents ->
         let state = descend state ~current_operator in
-        print_value t ~state ~type_of_ident:(Some (ty, env)) contents)
+        print_value t ~state ~type_of_ident:(Some (Cmt_file.Core ty, env))
+          contents)
 
   and print_record t ~state ~path:_ ~params ~args ~fields ~record_repr ~env v =
     let formatter = state.formatter in
@@ -486,7 +474,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
             let typ = type_for_field ~index in
             let printer v =
               let state = descend state ~current_operator:Separator in
-              print_value t ~state ~type_of_ident:(Some (typ, env)) v
+              print_value t ~state
+                ~type_of_ident:(Some (Cmt_file.Core typ, env)) v
             in
             Ident.name ld.Types.ld_id, printer)
           fields 
@@ -667,7 +656,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                   try Ctype.apply env params arg_ty instantiated_params
                   with Ctype.Cannot_apply -> arg_ty
                 in
-                print_value t ~state ~type_of_ident:(Some (arg_ty, env)) v)
+                print_value t ~state
+                  ~type_of_ident:(Some (Cmt_file.Core arg_ty, env)) v)
               args
           in
           let print_prefix ppf () =
@@ -799,7 +789,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
               | None -> one_elt_unavailable ()
               | Some elt ->
                 print_value t ~state:elt_state
-                  ~type_of_ident:(Some (element_ty, env)) elt
+                  ~type_of_ident:(Some (Cmt_file.Core element_ty, env)) elt
               end;
               begin match V.field_exn v 2 with
               | exception _ -> one_or_more_elts_unavailable ()
@@ -904,7 +894,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
 *)
                   Format.fprintf formatter "@[<hov 2>";
                   print_value t ~state:binding_state
-                    ~type_of_ident:(Some (key_ty, key_env)) key;
+                    ~type_of_ident:(Some (Cmt_file.Core key_ty, key_env)) key;
                   Format.fprintf formatter " @{<file_name_colour>==>@}@ ";
 (*
                   Format.fprintf formatter "@]";
@@ -920,7 +910,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                   Format.pp_set_margin formatter (String.length rule - 2);
 *)
                   print_value t ~state:binding_state
-                    ~type_of_ident:(Some (datum_ty, datum_env)) datum;
+                    ~type_of_ident:(Some (Cmt_file.Core datum_ty, datum_env))
+                    datum;
                   Format.fprintf formatter ";@]";
 (*
                   Format.fprintf formatter "@]";
@@ -1001,7 +992,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
               Format.fprintf formatter "@{<error_colour>}<key unavailable>"
             | Some key ->
               print_value t ~state:binding_state
-                ~type_of_ident:(Some (key_ty, key_env)) key
+                ~type_of_ident:(Some (Cmt_file.Core key_ty, key_env)) key
             end;
             Format.fprintf formatter " @{<file_name_colour>==>@}@ ";
             begin match V.field_exn bucket_list 1 with
@@ -1011,7 +1002,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
               Format.fprintf formatter "@{<error_colour>}<datum unavailable>"
             | Some datum ->
               print_value t ~state:binding_state
-                ~type_of_ident:(Some (datum_ty, datum_env)) datum
+                ~type_of_ident:(Some (Cmt_file.Core datum_ty, datum_env)) datum
             end;
             Format.fprintf formatter "@]";
             begin match V.field_exn bucket_list 2 with
@@ -1082,11 +1073,11 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       end
     end
 
-  let print_short_value t ~state ~type_of_ident:type_expr_and_env v : unit =
+  let print_short_value t ~state ~type_of_ident:type_and_env v : unit =
     let formatter = state.formatter in
     match
       Our_type_oracle.find_type_information t.type_oracle ~formatter
-        ~type_expr_and_env ~scrutinee:v
+        type_and_env ~scrutinee:v
     with
     | Obj_immediate -> Format.fprintf formatter "unboxed"
     | Obj_immediate_but_should_be_boxed ->
@@ -1127,11 +1118,11 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     | Custom -> Format.fprintf formatter "custom"
     | Unknown -> Format.fprintf formatter "unknown"
 
-  let print_short_type t ~state ~type_of_ident:type_expr_and_env v : unit =
+  let print_short_type t ~state ~type_of_ident:type_and_env v : unit =
     let formatter = state.formatter in
     match
       Our_type_oracle.find_type_information t.type_oracle ~formatter
-        ~type_expr_and_env ~scrutinee:v
+        type_and_env ~scrutinee:v
     with
     | Obj_immediate -> Format.fprintf formatter "unboxed"
     | Obj_immediate_but_should_be_boxed ->
@@ -1180,18 +1171,20 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           V.print scrutinee dwarf_type
       end;
       let type_of_ident =
-        match Cmt_cache.find_cached_type t.cmt_cache ~cached_type:dwarf_type with
-        | Some type_expr_and_env -> Some type_expr_and_env
+        match
+          Cmt_cache.find_cached_type t.cmt_cache ~cached_type:dwarf_type
+        with
+        | Some type_and_env -> Some type_and_env
         | None ->
-          Type_helper.type_expr_and_env_from_dwarf_type ~dwarf_type
+          Type_helper.type_and_env_from_dwarf_type ~dwarf_type
             ~cmt_cache:t.cmt_cache
       in
       let is_unit =
         (* Print variables (in particular parameters) of type [unit] even when
            unavailable. *)
         match type_of_ident with
-        | None -> false
-        | Some (ty, env) ->
+        | None | Some (Module _, _) -> false
+        | Some (Core ty, env) ->
           let ty = Ctype.expand_head env ty in
           match ty.desc with
           | Tconstr (path, _, _) -> Path.same path Predef.path_unit

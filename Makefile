@@ -116,8 +116,12 @@ SRC=src/monda_debug.ml \
     src/unified_value_traversal.ml \
     src/type_oracle.mli \
     src/type_oracle.ml \
+    src/type_helper_intf.ml \
     src/type_helper.mli \
     src/type_helper.ml \
+    src/type_printer_intf.ml \
+    src/type_printer.mli \
+    src/type_printer.ml \
     src/value_copier.mli \
     src/value_copier.ml \
     src/value_printer.mli \

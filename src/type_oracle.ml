@@ -483,4 +483,15 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         (Result.to_string result)
     end;
     result
+
+  let find_type_information t ~formatter
+        (type_and_env : (Cmt_file.core_or_module_type * Env.t) option)
+        ~scrutinee =
+    let type_expr_and_env =
+      match type_and_env with
+      | None -> None
+      | Some (Core type_expr, env) -> Some (type_expr, env)
+      | Some (Module _modtype, _env) -> None
+    in
+    find_type_information t ~formatter ~type_expr_and_env ~scrutinee
 end

@@ -109,7 +109,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) : sig
   val find_type_information
      : t
     -> formatter:Format.formatter
-    -> type_expr_and_env:(Types.type_expr * Env.t) option
+    -> (Cmt_file.core_or_module_type * Env.t) option
     -> scrutinee:D.Value.t
     -> Result.t
 end

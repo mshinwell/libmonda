@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2013--2019 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -32,16 +32,26 @@ module Gdb_debugger_with_traversal = Unified_value_traversal.Make (Gdb_debugger)
 module Load_path = Load_path.Make (Gdb_debugger_with_traversal)
 module Cmt_cache = Cmt_cache.Make (Load_path)
 module Follow_path = Follow_path.Make (Gdb_debugger_with_traversal) (Cmt_cache)
+module Type_helper =
+  Type_helper.Make (Gdb_debugger_with_traversal) (Cmt_cache)
+module Type_printer =
+  Type_printer.Make (Gdb_debugger_with_traversal) (Cmt_cache) (Type_helper)
 module Value_printer =
-  Value_printer.Make (Gdb_debugger_with_traversal) (Cmt_cache)
+  Value_printer.Make (Gdb_debugger_with_traversal) (Cmt_cache) (Type_helper)
+    (Type_printer)
 
 let cmt_cache = Cmt_cache.create ()
 
 let follow_path = Follow_path.create ~cmt_cache
-let value_printer = Value_printer.create ~cmt_cache
+let type_printer = Type_printer.create cmt_cache
+let value_printer = Value_printer.create cmt_cache type_printer
 
 let split_search_path path =
   String.split_on_char ':' path
+
+let can_print_type ~dwarf_type =
+  Dwarf_name_laundry.split_base_type_die_name dwarf_type <> None
+    || Cmt_cache.find_cached_type cmt_cache ~cached_type:dwarf_type <> None
 
 let print_value is_synthetic
       (address_on_target : Gdb_debugger_with_traversal.Obj.t)
@@ -52,14 +62,10 @@ let print_value is_synthetic
   (* When doing e.g. "inf reg", gdb passes "int64_t" as the type to print
      at.  Since we can't yet print out-of-heap values etc, don't try to
      be fancy here. *)
-  let can_print =
-    Dwarf_name_laundry.split_base_type_die_name dwarf_type <> None
-      || Cmt_cache.find_cached_type cmt_cache ~cached_type:dwarf_type
-           <> None
-  in
-  if not can_print then begin
+  if not (can_print_type ~dwarf_type) then begin
     false
   end else begin
+    (* CR mshinwell: This search path can be removed now probably *)
     let cmt_file_search_path = split_search_path cmt_file_search_path in
     let scrutinee =
       let module V = Gdb_debugger_with_traversal.Value in
@@ -86,6 +92,18 @@ Format.eprintf "From_gdb_ocaml.print_value OVP starting.  Scrutinee %a.  \
     true
   end
 
+let print_type (dwarf_type : string) (stream : Gdb_debugger.stream) =
+Format.eprintf "Dwarf type %S\n%!" dwarf_type;
+  if not (can_print_type ~dwarf_type) then begin
+Format.eprintf "Cannot print\n%!";
+    false
+  end else begin
+    let formatter = Gdb_debugger.formatter stream in
+    let result = Type_printer.print type_printer formatter ~dwarf_type in
+    Format.pp_print_flush formatter ();
+    result
+  end
+
 type evaluate_result =
   | Failure
   | Ok of { rvalue : Gdb_debugger_with_traversal.Obj.t; type_name : string; }
@@ -99,8 +117,8 @@ let evaluate (path : string) (cmt_file_search_path : string)
       ~lvalue_or_rvalue:Follow_path.Rvalue
   with
   | None -> Failure
-  | Some (rvalue, type_expr, env) ->
-    let type_name = Cmt_cache.cache_type cmt_cache ~type_expr ~env in
+  | Some (rvalue, ty, env) ->
+    let type_name = Cmt_cache.cache_type cmt_cache ty env in
     Ok { rvalue; type_name; }
 
 type parse_result =
@@ -116,6 +134,7 @@ let demangle ~mangled_name =
 
 let () =
   Callback.register "From_gdb_ocaml.print_value" print_value;
+  Callback.register "From_gdb_ocaml.print_type" print_type;
   Callback.register "From_gdb_ocaml.demangle" demangle;
   Callback.register "From_gdb_ocaml.evaluate" evaluate;
   Callback.register "From_gdb_ocaml.parse" parse

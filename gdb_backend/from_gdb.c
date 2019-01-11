@@ -180,6 +180,52 @@ monda_val_print (struct type* type, int embedded_offset, CORE_ADDR address,
   CAMLreturn0;
 }
 
+extern "C" void
+monda_type_print (struct type *type,
+                  const char *varstring,
+                  struct ui_file *stream,
+                  int show, int level,
+                  const struct type_print_options *flags)
+{
+  CAMLparam0();
+  CAMLlocal2(v_type, v_stream);
+  CAMLlocalN(args, 2);
+
+  static caml_value* callback = NULL;
+
+  TRY {
+    if (TYPE_NAME (type) == NULL) {
+      c_print_type (type, varstring, stream, show, level, flags);
+    } else {
+      if (callback == NULL) {
+        callback = caml_named_value("From_gdb_ocaml.print_type");
+        assert (callback != NULL);
+      }
+
+      v_type = caml_copy_string(TYPE_NAME(type));
+      v_stream = caml_copy_int64((uint64_t) stream);
+
+      /* N.B. [Store_field] must not be used on [args]! */
+      args[0] = v_type;
+      args[1] = v_stream;
+
+      /* CR mshinwell: This should catch any OCaml exceptions. */
+      if (caml_callbackN(*callback, 2, args) == Val_false) {
+        c_print_type (type, varstring, stream, show, level, flags);
+      }
+    }
+  }
+  CATCH (exn, RETURN_MASK_ALL) {
+    fprintf(stderr, "monda_type_print: exception: %s\n",
+            exn.message ? exn.message : "<no message>");
+    CAMLdrop;
+    throw_exception(exn);
+  }
+  END_CATCH
+
+  CAMLreturn0;
+}
+
 extern "C" int
 monda_parse (const char* expr, int length)
 {

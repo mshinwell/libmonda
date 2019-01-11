@@ -30,7 +30,7 @@
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
 module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
-  let type_expr_and_env_from_dwarf_type ~dwarf_type ~cmt_cache =
+  let type_and_env_from_dwarf_type ~dwarf_type ~cmt_cache =
     let cmt_file_and_ident_name =
       match Dwarf_name_laundry.split_base_type_die_name dwarf_type with
       | None -> None

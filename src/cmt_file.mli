@@ -41,6 +41,10 @@ val load_from_channel_then_close
   -> add_to_load_path:(string list -> unit)
   -> t option
 
+type core_or_module_type =
+  | Core of Types.type_expr
+  | Module of Types.module_type
+
 (** Find the type and environment of definition of the given identifier by
     looking through a .cmt file.  The [name] and [stamp] will typically be
     obtained from a DWARF type using [Type_helper]. *)
@@ -48,7 +52,7 @@ val type_of_ident
    : t
   -> name:string
   -> stamp:int
-  -> (Types.type_expr * Env.t) option
+  -> (core_or_module_type * Env.t) option
 
 (* CR mshinwell: replace this crap with a variant *)
 val distinguished_var_name : string

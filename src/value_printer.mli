@@ -29,11 +29,17 @@
 
 (** Printer for OCaml values guided by data from the heap and .cmt files. *)
 
-module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) : sig
+module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S)
+      (Type_helper : Type_helper_intf.S
+        with module Cmt_cache := Cmt_cache)
+      (Type_printer : Type_printer_intf.S
+        with module Cmt_cache := Cmt_cache) :
+sig
   type t
 
   val create
-     : cmt_cache:Cmt_cache.t
+     : Cmt_cache.t
+    -> Type_printer.t
     -> t
 
   val print
