@@ -512,6 +512,8 @@ let intercept_style_tags_on_formatter ppf =
       match stag with
       | Format.String_tag "file_name_colour" -> Some File_name
       | Format.String_tag "function_name_colour" -> Some Function_name
+      (* CR mshinwell: Add more colours to gdb *)
+      | Format.String_tag "module_name_colour" -> Some Function_name
       | Format.String_tag "variable_name_colour" -> Some Variable_name
       | Format.String_tag "address_colour" -> Some Address
       | Format.String_tag "type_colour" -> Some Type
@@ -527,6 +529,7 @@ let intercept_style_tags_on_formatter ppf =
       match stag with
       | Format.String_tag "file_name_colour"
       | Format.String_tag "function_name_colour"
+      | Format.String_tag "module_name_colour"
       | Format.String_tag "variable_name_colour"
       | Format.String_tag "address_colour"
       | Format.String_tag "type_colour"
@@ -575,14 +578,16 @@ let with_formatter_margins ppf ~summary f =
     end;
     let indent = monda_get_chars_printed_on_current_line () in
     Format.pp_open_vbox ppf (indent + 2);
-    f ppf;
-    Format.pp_close_box ppf ()
+    let result = f ppf in
+    Format.pp_close_box ppf ();
+    result
   end else begin
     monda_set_wrap_column 0;
     Format.pp_open_hbox ppf ();
     Format.pp_set_margin ppf max_int;
-    f ppf;
-    Format.pp_close_box ppf ()
+    let result = f ppf in
+    Format.pp_close_box ppf ();
+    result
   end
 
 (* CR-someday mshinwell: Things to add:

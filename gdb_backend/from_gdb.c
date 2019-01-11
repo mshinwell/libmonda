@@ -188,8 +188,8 @@ monda_type_print (struct type *type,
                   const struct type_print_options *flags)
 {
   CAMLparam0();
-  CAMLlocal2(v_type, v_stream);
-  CAMLlocalN(args, 2);
+  CAMLlocal3(v_type, v_stream, v_varstring);
+  CAMLlocalN(args, 3);
 
   static caml_value* callback = NULL;
 
@@ -204,13 +204,15 @@ monda_type_print (struct type *type,
 
       v_type = caml_copy_string(TYPE_NAME(type));
       v_stream = caml_copy_int64((uint64_t) stream);
+      v_varstring = caml_copy_string(varstring);
 
       /* N.B. [Store_field] must not be used on [args]! */
       args[0] = v_type;
       args[1] = v_stream;
+      args[2] = v_varstring;
 
       /* CR mshinwell: This should catch any OCaml exceptions. */
-      if (caml_callbackN(*callback, 2, args) == Val_false) {
+      if (caml_callbackN(*callback, 3, args) == Val_false) {
         c_print_type (type, varstring, stream, show, level, flags);
       }
     }

@@ -306,14 +306,20 @@ and process_implementation ~(structure : T.structure)
 let create_idents_to_types_map ~(cmt_infos : Cmt_format.cmt_infos) =
   let cmt_annots = cmt_infos.cmt_annots in
   match cmt_annots with
-  | Packed _
-  | Interface _
-  (* CR mshinwell: find out what "partial" implementations and
-     interfaces are, and fix cmt_format.mli so it tells you *)
+  | Packed _ | Interface _
   | Partial_implementation _
   | Partial_interface _ -> String.Map.empty, LocTable.empty
   | Implementation structure ->
-    process_implementation ~structure ~idents_to_types:String.Map.empty
+    let idents_to_types =
+      (* CR mshinwell: This is a hack and could be improved.  Do we need
+         to read the .cmti to get the module's signature? *)
+      String.Map.add (Printf.sprintf "%s_0" cmt_infos.cmt_modname)
+        (Module (Mty_ident (Pident (
+           Ident.create_persistent "<compilation unit>"))),
+         cmt_infos.cmt_initial_env)
+        String.Map.empty
+    in
+    process_implementation ~structure ~idents_to_types
       ~app_points:LocTable.empty
 
 let load_path_from_cmt_infos (cmt_infos : Cmt_format.cmt_infos) =

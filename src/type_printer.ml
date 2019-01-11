@@ -41,7 +41,7 @@ struct
     { cmt_cache;
     }
 
-  let print_given_type_and_env ?always_print formatter
+  let print_given_type_and_env ?variable_name ?always_print formatter
         (type_and_env : (Cmt_file.core_or_module_type * Env.t) option) =
     (* In the cases where the type expression is absent or unhelpful then
        we could print, e.g. " : string" when the value has tag [String_tag].
@@ -56,6 +56,11 @@ struct
     | Some (Core type_expr, env) ->
       let type_expr = Btype.repr type_expr in
       let print () =
+        begin match variable_name with
+        | None -> ()
+        | Some name ->
+          Format.fprintf formatter "@{<variable_name_colour>%s@}" name
+        end;
         Format.fprintf formatter " : @{<type_colour>";
         Printtyp.wrap_printing_env ~error:false env (fun () ->
           Printtyp.reset_and_mark_loops type_expr;
@@ -74,13 +79,18 @@ struct
       | Tpoly _ | Tpackage _ -> print ()
       end
     | Some (Module modtype, env) ->
+      begin match variable_name with
+      | None -> ()
+      | Some name ->
+        Format.fprintf formatter "@{<module_name_colour>%s@}" name
+      end;
       Format.fprintf formatter " : @{<type_colour>";
       Printtyp.wrap_printing_env ~error:false env (fun () ->
         Printtyp.modtype formatter modtype);
       Format.fprintf formatter "@}";
       true
 
-  let print t formatter ~dwarf_type =
+  let print ?variable_name t formatter ~dwarf_type =
     let type_and_env =
       match Cmt_cache.find_cached_type t.cmt_cache ~cached_type:dwarf_type with
       | Some type_and_env -> Some type_and_env
@@ -88,5 +98,6 @@ struct
         Type_helper.type_and_env_from_dwarf_type ~dwarf_type
           ~cmt_cache:t.cmt_cache
     in
-    print_given_type_and_env ~always_print:() formatter type_and_env
+    print_given_type_and_env ?variable_name ~always_print:() formatter
+      type_and_env
 end

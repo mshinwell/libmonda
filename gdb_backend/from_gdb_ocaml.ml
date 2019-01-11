@@ -92,14 +92,18 @@ Format.eprintf "From_gdb_ocaml.print_value OVP starting.  Scrutinee %a.  \
     true
   end
 
-let print_type (dwarf_type : string) (stream : Gdb_debugger.stream) =
-Format.eprintf "Dwarf type %S\n%!" dwarf_type;
+let print_type (dwarf_type : string) (stream : Gdb_debugger.stream)
+      (variable_name : string) =
   if not (can_print_type ~dwarf_type) then begin
-Format.eprintf "Cannot print\n%!";
     false
   end else begin
     let formatter = Gdb_debugger.formatter stream in
-    let result = Type_printer.print type_printer formatter ~dwarf_type in
+    let result =
+      (* CR mshinwell: These margins aren't set for "info var" *)
+      Gdb_debugger.with_formatter_margins formatter ~summary:false
+        (fun formatter ->
+          Type_printer.print ~variable_name type_printer formatter ~dwarf_type)
+    in
     Format.pp_print_flush formatter ();
     result
   end

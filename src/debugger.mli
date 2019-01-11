@@ -216,8 +216,8 @@ module type S_base = sig
   val with_formatter_margins
      : Format.formatter
     -> summary:bool
-    -> (Format.formatter -> unit)
-    -> unit
+    -> (Format.formatter -> 'a)
+    -> 'a
 end
 
 module type S = sig
