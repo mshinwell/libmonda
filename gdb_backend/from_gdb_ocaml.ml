@@ -122,7 +122,7 @@ let evaluate (path : string) (cmt_file_search_path : string)
   with
   | None -> Failure
   | Some (rvalue, ty, env) ->
-    let type_name = Cmt_cache.cache_type cmt_cache ty env in
+    let type_name = Cmt_cache.cache_type cmt_cache ty env Is_parameter.local in
     Ok { rvalue; type_name; }
 
 type parse_result =

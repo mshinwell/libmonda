@@ -130,7 +130,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         ~must_be_mutable ~formatter v : obj_or_addr option =
     match type_and_env with
     | None -> None
-    | Some (ty, env) ->
+    | Some (ty, env, _is_parameter) ->
       let rec find_component ~path ~ty ~env ~previous_was_mutable
             ~(address_of_v : D.target_addr option) (v : D.Obj.t)
             : obj_or_addr option =

@@ -38,7 +38,7 @@ module type S = sig
      : ?variable_name:string
     -> ?always_print:unit
     -> Format.formatter
-    -> (Cmt_file.core_or_module_type * Env.t) option
+    -> (Cmt_file.core_or_module_type * Env.t * Is_parameter.t) option
     -> bool
 
   val print

@@ -119,9 +119,19 @@ struct
     let env =
       match type_and_env with
       | None -> None
-      | Some (_ty, env) -> Some env
+      | Some (_ty, env, _is_parameter) -> Some env
+    in
+    let _is_parameter =
+      match type_and_env with
+      | None -> Is_parameter.local  (* this is conservative *)
+      | Some (_ty, _env, is_parameter) -> is_parameter
     in
     let type_info =
+      let type_and_env =
+        match type_and_env with
+        | None -> None
+        | Some (ty, env, _is_parameter) -> Some (ty, env)
+      in
       Our_type_oracle.find_type_information t.type_oracle ~formatter
         type_and_env ~scrutinee:v
     in
@@ -152,10 +162,15 @@ struct
             raw (V.tag_exn v)
         | None -> Format.fprintf formatter "<synthetic pointer>"
         end
+      | Polymorphic_or_else_obj_boxed_traversable ->
+        if state.summary then Format.fprintf formatter "..."
+        else print_multiple_without_type_info t ~state v
+      | Polymorphic_or_else_obj_immediate ->
+        print_int t ~state v
       | Unit -> Format.fprintf formatter "()"
       | Int ->
         begin match V.int v with
-        | Some i -> Format.fprintf formatter "%d" i
+        | Some _ -> print_int t ~state v
         | None -> Format.fprintf formatter "@{<error_colour><Int?>@}"
         end
       | Char -> print_char t ~state v
@@ -170,7 +185,8 @@ struct
         end
       | Array (ty, env) -> print_array t ~state ~ty ~env v
       | List (ty, env) ->
-        print_list t ~state ~ty_and_env:(Some (Cmt_file.Core ty, env)) v
+        print_list t ~state
+          ~ty_and_env:(Some (Cmt_file.Core ty, env, Is_parameter.local)) v
       | Ref (ty, env) -> print_ref t ~state ~ty ~env v
       | Tuple (tys, env) -> print_tuple t ~state ~tys ~env v
       | Constant_constructor (name, kind) ->
@@ -231,7 +247,9 @@ struct
       if need_outer_box then begin
         Format.fprintf formatter "@[<hov 2>"
       end;
-      Format.fprintf formatter "@{<error_colour>[tag-%d:@} " (V.tag_exn value);
+      Format.fprintf formatter
+        "@{<error_colour>[@}@{<variable_name_colour>tag %d:@} "
+        (V.tag_exn value);
       let original_size = V.size_exn value in
       let max_size =
         if state.summary then 2 else state.max_array_elements_etc_to_print
@@ -267,7 +285,8 @@ struct
 
   and print_multiple_with_type_info ?print_prefix _t ~state ~printers
         ~current_operator ~opening_delimiter ~separator ~closing_delimiter
-        ~spaces_inside_delimiters ~can_elide_delimiters value =
+        ~spaces_inside_delimiters ~can_elide_delimiters
+        ~break_after_opening_delimiter value =
     let formatter = state.formatter in
     let original_size = V.size_exn value in
     let max_size =
@@ -299,7 +318,9 @@ struct
       if spaces_inside_delimiters then begin
         Format.fprintf formatter "@ "
       end;
-      Format.fprintf formatter "@,"
+      if break_after_opening_delimiter then begin
+          Format.fprintf formatter "@,"
+      end
     end;
     for field = 0 to size - 1 do
       if field > 0 then begin
@@ -332,7 +353,13 @@ struct
     let formatter = state.formatter in
     match V.int v with
     | None -> Format.fprintf formatter "<synthetic pointer>"
-    | Some v -> Format.fprintf formatter "%d" v
+    | Some v ->
+      if v = Stdlib.min_int then
+        Format.fprintf formatter "@{<variable_name_colour>Stdlib.min_int@}"
+      else if v = Stdlib.max_int then
+        Format.fprintf formatter "@{<variable_name_colour>Stdlib.max_int@}"
+      else
+        Format.fprintf formatter "%d" v
 
   and print_char _t ~state v =
     let formatter = state.formatter in
@@ -362,7 +389,8 @@ struct
     let printers =
       Array.map (fun ty state v ->
           let type_of_ident =
-            if size_ok then Some (Cmt_file.Core ty, env) else None
+            if size_ok then Some (Cmt_file.Core ty, env, Is_parameter.local)
+            else None
           in
           print_value t ~state ~type_of_ident v)
         component_types
@@ -371,19 +399,21 @@ struct
       ~current_operator:Separator
       ~opening_delimiter:"(" ~separator:"," ~closing_delimiter:")"
       ~spaces_inside_delimiters:false ~can_elide_delimiters:true
+      ~break_after_opening_delimiter:false
       v
 
   and print_array t ~state ~ty ~env v =
     let size = V.size_exn v in
     let printers =
       Array.init size (fun _ty state v ->
-        let type_of_ident = Some (Cmt_file.Core ty, env) in
+        let type_of_ident = Some (Cmt_file.Core ty, env, Is_parameter.local) in
         print_value t ~state ~type_of_ident v)
     in
     print_multiple_with_type_info t ~state ~printers
       ~current_operator:Separator
       ~opening_delimiter:"[|" ~separator:";" ~closing_delimiter:"|]"
       ~spaces_inside_delimiters:true ~can_elide_delimiters:false
+      ~break_after_opening_delimiter:false
       v
 
   and print_list t ~state ~ty_and_env v : unit =
@@ -441,7 +471,8 @@ struct
       | None -> Format.fprintf formatter "%s" optimized_out
       | Some contents ->
         let state = descend state ~current_operator in
-        print_value t ~state ~type_of_ident:(Some (Cmt_file.Core ty, env))
+        print_value t ~state
+          ~type_of_ident:(Some (Cmt_file.Core ty, env, Is_parameter.local))
           contents)
 
   and print_record t ~state ~path:_ ~params ~args ~fields ~record_repr ~env v =
@@ -475,7 +506,9 @@ struct
             let printer v =
               let state = descend state ~current_operator:Separator in
               print_value t ~state
-                ~type_of_ident:(Some (Cmt_file.Core typ, env)) v
+                ~type_of_ident:(Some (
+                  Cmt_file.Core typ, env, Is_parameter.local))
+                v
             in
             Ident.name ld.Types.ld_id, printer)
           fields 
@@ -521,71 +554,88 @@ struct
         | Some pc ->
           let pc = V.int pc in
           let partial, pc =
-              match pc with
-              | None -> None, V.field_as_addr_exn v 0
-              | Some arity ->
-                if arity < 2 then
-                  None, V.field_as_addr_exn v 0
-                else
-                  let partial_app_pc = V.field_as_addr_exn v 0 in
-                  let pc = V.field_as_addr_exn v 2 in
-                  (* Try to determine if the closure corresponds to a
-                     partially-applied function. *)
-                  match D.symbol_at_pc partial_app_pc with
+            match pc with
+            | None -> None, V.field_as_addr_exn v 0
+            | Some arity ->
+              if arity < 2 then
+                None, V.field_as_addr_exn v 0
+              else
+                let partial_app_pc = V.field_as_addr_exn v 0 in
+                let pc = V.field_as_addr_exn v 2 in
+                (* Try to determine if the closure corresponds to a
+                   partially-applied function. *)
+                match D.symbol_at_pc partial_app_pc with
+                | None -> None, pc
+                | Some symbol ->
+                  match Naming_conventions.is_currying_wrapper symbol with
                   | None -> None, pc
-                  | Some symbol ->
-                    match Naming_conventions.is_currying_wrapper symbol with
-                    | None -> None, pc
-                    | Some (total_num_args, num_args_so_far) ->
-                      (* Find the original closure in order to determine which
-                         function is partially applied.  (See comments about
-                         currying functions in cmmgen.ml in the compiler
-                         source.) *)
-                      match begin
-                        let v = ref v in
-                        for _i = 1 to num_args_so_far do
-                          if V.size_exn !v <> 5 then raise Exit;
-                          match V.field_exn !v 4 with
-                          | None -> raise Exit
-                          | Some new_v -> v := new_v
-                        done;
-                        !v
-                      end with
-                      | exception Exit -> None, pc
-                      | v ->
-                        (* This should be the original function. *)
-                        match V.field_exn v 1 with
+                  | Some (total_num_args, num_args_so_far) ->
+                    (* Find the original closure in order to determine which
+                       function is partially applied.  (See comments about
+                       currying functions in cmmgen.ml in the compiler
+                       source.) *)
+                    match begin
+                      let v = ref v in
+                      for _i = 1 to num_args_so_far do
+                        if V.size_exn !v <> 5 then raise Exit;
+                        match V.field_exn !v 4 with
+                        | None -> raise Exit
+                        | Some new_v -> v := new_v
+                      done;
+                      !v
+                    end with
+                    | exception Exit -> None, pc
+                    | v ->
+                      (* This should be the original function. *)
+                      match V.field_exn v 1 with
+                      | None -> None, pc
+                      | Some arity ->
+                        match V.int arity with
                         | None -> None, pc
-                        | Some arity ->
-                          match V.int arity with
-                          | None -> None, pc
-                          | Some arity when arity <= 1 ->
-                            (* The function should have more than 1 arg. *)
-                            None, pc
-                          | Some _arity ->
-                            Some (total_num_args, num_args_so_far),
-                              V.field_as_addr_exn v 2
+                        | Some arity when arity <= 1 ->
+                          (* The function should have more than 1 arg. *)
+                          None, pc
+                        | Some _arity ->
+                          Some (total_num_args, num_args_so_far),
+                            V.field_as_addr_exn v 2
           in
-          let partial, partial_args =
+          let partial, partial', partial_args =
             match partial with
-            | None -> "", ""
+            | None -> "", "", ""
             | Some (total_num_args, args_so_far) ->
-              "partial ",
+              "partial ", "partially-applied ",
                 Printf.sprintf " (got %d of %d args)" args_so_far total_num_args
           in
+          begin match D.symbol_at_pc pc with
+          | None ->
+            Format.fprintf formatter "<%sfun> (%a)%s" partial
+              D.Target_memory.print_addr pc partial_args
+          | Some symbol ->
+            Format.fprintf formatter "%s@{<function_name_colour>%s@}%s"
+              partial' symbol partial_args
+          end
+
+(*
           match
             D.filename_and_line_number_of_pc pc
               ~use_previous_line_number_if_on_boundary:true
           with
           | None ->
-            Format.fprintf formatter "<%sfun> (%a)%s" partial
-              D.Target_memory.print_addr pc partial_args
+            begin match D.symbol_at_pc pc with
+            | None ->
+              Format.fprintf formatter "<%sfun> (%a)%s" partial
+                D.Target_memory.print_addr pc partial_args
+            | Some symbol ->
+              Format.fprintf formatter "<%sfun> (%s)%s" partial
+                symbol partial_args
+            end
           | Some (filename, Some line) ->
             Format.fprintf formatter "<%sfun> (%s:%d)%s" partial filename line
               partial_args
           | Some (filename, None) ->
             Format.fprintf formatter "<%sfun> (%s, %a)%s" partial filename
               D.Target_memory.print_addr pc partial_args
+*)
       end
     with D.Read_error -> Format.fprintf formatter "<closure?>"
 
@@ -657,7 +707,9 @@ struct
                   with Ctype.Cannot_apply -> arg_ty
                 in
                 print_value t ~state
-                  ~type_of_ident:(Some (Cmt_file.Core arg_ty, env)) v)
+                  ~type_of_ident:(Some (
+                    Cmt_file.Core arg_ty, env, Is_parameter.local))
+                  v)
               args
           in
           let print_prefix ppf () =
@@ -668,6 +720,7 @@ struct
             ~current_operator
             ~opening_delimiter:"(" ~separator:"," ~closing_delimiter:")"
             ~spaces_inside_delimiters:false ~can_elide_delimiters:true
+            ~break_after_opening_delimiter:false
             v
         end)
     end
@@ -789,7 +842,9 @@ struct
               | None -> one_elt_unavailable ()
               | Some elt ->
                 print_value t ~state:elt_state
-                  ~type_of_ident:(Some (Cmt_file.Core element_ty, env)) elt
+                  ~type_of_ident:(Some (
+                    Cmt_file.Core element_ty, env, Is_parameter.local))
+                  elt
               end;
               begin match V.field_exn v 2 with
               | exception _ -> one_or_more_elts_unavailable ()
@@ -894,7 +949,9 @@ struct
 *)
                   Format.fprintf formatter "@[<hov 2>";
                   print_value t ~state:binding_state
-                    ~type_of_ident:(Some (Cmt_file.Core key_ty, key_env)) key;
+                    ~type_of_ident:(Some (
+                      Cmt_file.Core key_ty, key_env, Is_parameter.local))
+                    key;
                   Format.fprintf formatter " @{<file_name_colour>==>@}@ ";
 (*
                   Format.fprintf formatter "@]";
@@ -910,7 +967,8 @@ struct
                   Format.pp_set_margin formatter (String.length rule - 2);
 *)
                   print_value t ~state:binding_state
-                    ~type_of_ident:(Some (Cmt_file.Core datum_ty, datum_env))
+                    ~type_of_ident:(Some (
+                      Cmt_file.Core datum_ty, datum_env, Is_parameter.local))
                     datum;
                   Format.fprintf formatter ";@]";
 (*
@@ -992,7 +1050,9 @@ struct
               Format.fprintf formatter "@{<error_colour>}<key unavailable>"
             | Some key ->
               print_value t ~state:binding_state
-                ~type_of_ident:(Some (Cmt_file.Core key_ty, key_env)) key
+                ~type_of_ident:(Some (
+                  Cmt_file.Core key_ty, key_env, Is_parameter.local))
+                key
             end;
             Format.fprintf formatter " @{<file_name_colour>==>@}@ ";
             begin match V.field_exn bucket_list 1 with
@@ -1002,7 +1062,9 @@ struct
               Format.fprintf formatter "@{<error_colour>}<datum unavailable>"
             | Some datum ->
               print_value t ~state:binding_state
-                ~type_of_ident:(Some (Cmt_file.Core datum_ty, datum_env)) datum
+                ~type_of_ident:(Some (
+                  Cmt_file.Core datum_ty, datum_env, Is_parameter.local))
+                datum
             end;
             Format.fprintf formatter "@]";
             begin match V.field_exn bucket_list 2 with
@@ -1085,6 +1147,10 @@ struct
       else Format.fprintf formatter "unboxed (?)"
     | Obj_boxed_traversable -> Format.fprintf formatter "boxed"
     | Obj_boxed_not_traversable -> Format.fprintf formatter "boxed-not-trav."
+    | Polymorphic_or_else_obj_immediate ->
+      Format.fprintf formatter "unboxed"
+    | Polymorphic_or_else_obj_boxed_traversable ->
+      Format.fprintf formatter "boxed"
     | Int ->
       begin match V.int v with
       | Some i -> Format.fprintf formatter "%d" i
@@ -1130,6 +1196,10 @@ struct
       else Format.fprintf formatter "unboxed (?)"
     | Obj_boxed_traversable -> Format.fprintf formatter "boxed"
     | Obj_boxed_not_traversable -> Format.fprintf formatter "boxed-not-trav."
+    | Polymorphic_or_else_obj_immediate ->
+      Format.fprintf formatter "unboxed"
+    | Polymorphic_or_else_obj_boxed_traversable ->
+      Format.fprintf formatter "boxed"
     | Int ->
       begin match V.int v with
       | Some _ -> Format.fprintf formatter "int"
@@ -1183,8 +1253,8 @@ struct
         (* Print variables (in particular parameters) of type [unit] even when
            unavailable. *)
         match type_of_ident with
-        | None | Some (Module _, _) -> false
-        | Some (Core ty, env) ->
+        | None | Some (Module _, _, _) -> false
+        | Some (Core ty, env, _) ->
           let ty = Ctype.expand_head env ty in
           match ty.desc with
           | Tconstr (path, _, _) -> Path.same path Predef.path_unit
@@ -1217,8 +1287,18 @@ struct
         }
         in
         if only_print_short_type then begin
+          let type_of_ident =
+            match type_of_ident with
+            | None -> None
+            | Some (ty, env, _) -> Some (ty, env)
+          in
           print_short_type t ~state ~type_of_ident scrutinee
         end else if only_print_short_value then begin
+          let type_of_ident =
+            match type_of_ident with
+            | None -> None
+            | Some (ty, env, _) -> Some (ty, env)
+          in
           print_short_value t ~state ~type_of_ident scrutinee
         end else begin
           print_value t ~state ~type_of_ident scrutinee

@@ -42,7 +42,7 @@ struct
     }
 
   let print_given_type_and_env ?variable_name ?always_print formatter
-        (type_and_env : (Cmt_file.core_or_module_type * Env.t) option) =
+        (type_and_env : (Cmt_file.core_or_module_type * _ * _) option) =
     (* In the cases where the type expression is absent or unhelpful then
        we could print, e.g. " : string" when the value has tag [String_tag].
        However, this might be misleading, in the case where the value is
@@ -53,7 +53,7 @@ struct
     *)
     match type_and_env with
     | None -> false
-    | Some (Core type_expr, env) ->
+    | Some (Core type_expr, env, _is_parameter) ->
       let type_expr = Btype.repr type_expr in
       let print () =
         begin match variable_name with
@@ -78,7 +78,7 @@ struct
       | Tarrow _ | Ttuple _ | Tconstr _ | Tobject _ | Tfield _ | Tvariant _
       | Tpoly _ | Tpackage _ -> print ()
       end
-    | Some (Module modtype, env) ->
+    | Some (Module modtype, env, _is_parameter) ->
       begin match variable_name with
       | None -> ()
       | Some name ->

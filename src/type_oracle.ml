@@ -50,6 +50,8 @@ module Result = struct
     (* CR mshinwell: naming *)
     | Obj_immediate
     | Obj_immediate_but_should_be_boxed
+    | Polymorphic_or_else_obj_boxed_traversable
+    | Polymorphic_or_else_obj_immediate
     | Unit
     | Abstract of Path.t
     | Array of Types.type_expr * Env.t
@@ -95,6 +97,10 @@ module Result = struct
     | Obj_boxed_not_traversable -> "Obj_boxed_not_traversable"
     | Obj_immediate -> "Obj_immediate"
     | Obj_immediate_but_should_be_boxed -> "Obj_immediate_but_should_be_boxed"
+    | Polymorphic_or_else_obj_boxed_traversable ->
+      "Polymorphic_or_else_obj_boxed_traversable"
+    | Polymorphic_or_else_obj_immediate ->
+      "Polymorphic_or_else_obj_immediate"
     | Unit -> "Unit"
     | Abstract _ -> "Abstract"
     | Array _ -> "Array"
@@ -323,7 +329,11 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | Absent | Boxed _ -> Closure
       | Unboxed _ -> Obj_immediate_but_should_be_boxed
       end
-    | Types.Tvar _
+    | Types.Tvar _ ->
+      begin match scrutinee with
+      | Absent | Boxed _ -> Polymorphic_or_else_obj_boxed_traversable
+      | Unboxed _ -> Polymorphic_or_else_obj_immediate
+      end
     | Types.Tobject _ | Types.Tfield _ | Types.Tnil | Types.Tsubst _
     | Types.Tunivar _ | Types.Tpoly _ | Types.Tpackage _ ->
       (* CR mshinwell: more work to do here *)
@@ -331,7 +341,6 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | Absent | Boxed _ ->
         let what =
           match (Btype.repr type_expr).Types.desc with
-          | Types.Tvar _ -> "Tvar"
           | Types.Tobject _ -> "Tobject"
           | Types.Tfield _ -> "Tfield"
           | Types.Tnil -> "Tnil"

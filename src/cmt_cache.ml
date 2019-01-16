@@ -32,7 +32,8 @@ module Make (LP : Load_path_intf.S) = struct
     cache : Cmt_file.t Compilation_unit.Tbl.t;
     mutable cached_type_counter : int;
     (* CR mshinwell: Use something better than a polymorphic hash table *)
-    cached_types : (int, Cmt_file.core_or_module_type * Env.t) Hashtbl.t;
+    cached_types : (int, Cmt_file.core_or_module_type * Env.t * Is_parameter.t)
+      Hashtbl.t;
   }
 
   let create () =
@@ -52,7 +53,7 @@ module Make (LP : Load_path_intf.S) = struct
       end
     | cmt -> Some cmt
 
-  let cache_type t (ty : Cmt_file.core_or_module_type) env =
+  let cache_type t (ty : Cmt_file.core_or_module_type) env is_parameter =
     let id = t.cached_type_counter in
     t.cached_type_counter <- t.cached_type_counter + 1;
     assert (not (Hashtbl.mem t.cached_types id));
@@ -61,7 +62,7 @@ module Make (LP : Load_path_intf.S) = struct
       | Core type_expr -> Core (Ctype.correct_levels type_expr)
       | Module _ -> ty
     in
-    Hashtbl.replace t.cached_types id (ty, env);
+    Hashtbl.replace t.cached_types id (ty, env, is_parameter);
     "__ocamlcached " ^ string_of_int id
 
   let find_cached_type t ~cached_type =

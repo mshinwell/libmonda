@@ -34,7 +34,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     let cmt_file_and_ident_name =
       match Dwarf_name_laundry.split_base_type_die_name dwarf_type with
       | None -> None
-      | Some { compilation_unit; ident_name; ident_stamp; } ->
+      | Some { compilation_unit; ident_name; ident_stamp; is_parameter; } ->
         let compilation_unit =
           (* CR mshinwell: move to [Dwarf_name_laundry] *)
           Compilation_unit.create (Ident.create_persistent compilation_unit)
@@ -43,12 +43,14 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         in
         match Cmt_cache.load cmt_cache compilation_unit with
         | None -> None
-        | Some cmt -> Some (cmt, ident_name, ident_stamp)
+        | Some cmt -> Some (cmt, ident_name, ident_stamp, is_parameter)
     in
     match cmt_file_and_ident_name with
     | None -> None
-    | Some (cmt_file, name, stamp) ->
-      Cmt_file.type_of_ident cmt_file ~name ~stamp
+    | Some (cmt_file, name, stamp, is_parameter) ->
+      match Cmt_file.type_of_ident cmt_file ~name ~stamp with
+      | None -> None
+      | Some (ty, env) -> Some (ty, env, is_parameter)
 
   (* CR mshinwell: decide what to do about warning levels etc.
           Printf.eprintf ".cmt file %s in directory %s not found\n%!"
