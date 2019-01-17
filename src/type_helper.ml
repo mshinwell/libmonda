@@ -126,7 +126,11 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                   match
                     D.Call_site.ocaml_specific_compilation_unit_info call_site
                   with
-                  | None -> normal_case ()
+                  | None ->
+                    if Monda_debug.debug then begin
+                      Printf.fprintf stdout "Couldn't find unit info.\n"
+                    end;
+                    normal_case ()
                   | Some unit_info ->
                     let comp_unit =
                       (* CR mshinwell: do something so this isn't here *)
@@ -137,13 +141,22 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                             None))
                     in
                     match Cmt_cache.load cmt_cache comp_unit with
-                    | None -> normal_case ()
+                    | None ->
+                      if Monda_debug.debug then begin
+                        Printf.fprintf stdout ".cmt load failed\n"
+                      end;
+                      normal_case ()
                     | Some call_site_cmt ->
                       match
                         Cmt_file.type_of_call_site_argument call_site_cmt ~line
                           ~index
                       with
-                      | None -> normal_case ()
+                      | None ->
+                        if Monda_debug.debug then begin
+                          Printf.fprintf stdout "type lookup failed (line %d)\n"
+                            line
+                        end;
+                        normal_case ()
                       | Some (ty, env) -> Some (ty, env, is_parameter)
                 end
               | Some dwarf_type ->
