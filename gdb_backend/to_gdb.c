@@ -676,6 +676,35 @@ caml_value monda_set_wrap_column (caml_value v_col)
 }
 
 extern "C"
+caml_value monda_dwarf_type_of_argument (caml_value v_call_site,
+                                         caml_value v_index)
+{
+  CAMLparam3 (v_call_site, v_frame, v_index);
+  CAMLlocal1 (v_result);
+
+  struct frame_info* frame = (struct frame_info*) Nativeint_val (v_frame);
+
+  struct call_site* call_site =
+    (struct call_site*) Nativeint_val (v_call_site);
+
+  int index = Long_val (v_index);
+  assert (index >= 0);
+
+  if (index > call_site->parameter_count) {
+    CAMLreturn (Val_long (0 /* None */));
+  }
+
+  struct call_site_parameter* arg = call_site->parameter[index];
+  if (arg == NULL || arg->type == NULL || TYPE_NAME (arg->type) == NULL) {
+    CAMLreturn (Val_long (0 /* None */));
+  }
+
+  v_result = caml_alloc (1, 0 /* Some */);
+  Store_field (v_result, 0, caml_copy_string (TYPE_NAME (arg->type)));
+  CAMLreturn (v_result);
+}
+
+extern "C"
 caml_value monda_caller_of_frame (caml_value v_frame)
 {
   CAMLparam1 (v_frame);
@@ -698,15 +727,13 @@ caml_value monda_caller_of_frame (caml_value v_frame)
     struct call_site_chain* chain =
       call_site_find_chain (prev_arch, return_addr, callee_addr);
 
-    if (chain == NULL
+    if (chain == NULL  /* there is an ambiguity */
         || chain->length < 0
         || chain->callers < 0
         /* We would never expect any newer tail call frames than the one
            provided: */
         || chain->callees != 0
-        /* Following the condition in the comment in dwarf2loc.h: */
-        || chain->callers + chain->callees < chain->length
-        || chain->callers + chain->callees > chain->length) {
+        || chain->callers != chain->length) {
       CAMLreturn (Val_long (0) /* None */);
     }
 
@@ -719,9 +746,9 @@ caml_value monda_caller_of_frame (caml_value v_frame)
       assert (get_frame_type (caller_frame) == TAILCALL_FRAME);
     }
 
-    CORE_ADDR call_site = get_frame_pc (caller_frame);
+    struct call_site* call_site = chain->call_site[chain->callers - 1];
     if (!prev_frame_is_tailcall) {
-      assert (call_site == return_addr);
+      assert (call_site->pc == return_addr);
     }
 
     v_result = caml_alloc (2, 0 /* Some */);

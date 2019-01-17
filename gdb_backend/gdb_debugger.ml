@@ -473,14 +473,27 @@ let find_and_open ~filename ~dirname =
   | None -> None
   | Some (filename, fd) -> Some (filename, Unix.in_channel_of_descr fd)
 
-module Frame : sig
+module Call_site = struct
   type t = nativeint
 
-  let caller t =
+  external dwarf_type_of_argument
+     : Call_site.t
+    -> int
+    -> string option
+    = "monda_dwarf_type_of_argument"
 
+  let dwarf_type_of_argument frame ~call_site ~index =
+    dwarf_type_of_argument frame call_site index
 end
 
-let dwarf_type_of_argument frame ~call_site ~index =
+module Frame = struct
+  type t = nativeint
+
+  external caller
+     : Frame.t
+    -> (t * Call_site.t) option
+    = "monda_caller_of_frame"
+end
 
 let filename_and_line_number_of_pc addr
       ~use_previous_line_number_if_on_boundary =

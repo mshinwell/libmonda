@@ -160,29 +160,34 @@ module type S_base = sig
     -> use_previous_line_number_if_on_boundary:bool
     -> (string * (int option)) option
 
+  module Call_site : sig
+    type t
+
+    (** Return the OCaml-formatted DWARF type of the given function argument
+        (numbered left to right starting from zero, following [Is_parameter] in
+        the compiler) at the given [call_site] in the context of the given
+        [frame].
+
+        The [call_site] address is the value of the program counter as seen
+        having unwound to the [frame] from the callee, which may be just after
+        the call. (As returned by e.g. [Frame.caller], above.) *)
+
+    val dwarf_type_of_argument
+       : t
+      -> Frame.t
+      -> index:int
+      -> string option
+  end
+
   module Frame : sig
     type t
 
-    (** Return the program counter value in the frame F that called the
-        selected frame (not the return address of the current frame),
-        together with F.  This PC value may not always be known, for example
-        in some tail call scenarios; in these cases, [None] is returned. *)
-    val caller : t -> (t * target_addr) option
+    (** Return the call site in the frame F that called the selected frame (not
+        the return address of the current frame), together with F. This PC value
+        may not always be known, for example in some tail call scenarios; in
+        these cases, [None] is returned. *)
+    val caller : t -> (t * Call_site.t) option
   end
-
-  (** Return the OCaml-formatted DWARF type of the given function argument
-      (numbered left to right starting from zero, following [Is_parameter] in
-      the compiler) at the given [call_site] in the context of the given
-      [frame].
-
-      The [call_site] address is the value of the program counter as seen having
-      unwound to the [frame] from the callee, which may be just after the
-      call.  (As returned by e.g. [Frame.caller], above.) *)
-  val dwarf_type_of_argument
-     : Frame.t
-    -> call_site:target_addr
-    -> index:int
-    -> string option
 
   type ocaml_specific_compilation_unit_info = private {
     compiler_version : string;
