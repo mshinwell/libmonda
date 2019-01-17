@@ -38,7 +38,8 @@ let optimized_out = "<unavailable>"
 
 module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S)
       (Type_helper : Type_helper_intf.S
-        with module Cmt_cache := Cmt_cache)
+        with module Cmt_cache := Cmt_cache
+        with module D := D)
       (Type_printer : Type_printer_intf.S
         with module Cmt_cache := Cmt_cache) =
 struct
@@ -1242,7 +1243,7 @@ struct
            unavailable. *)
         match type_of_ident with
         | None | Some (Module _, _, _) -> false
-        | Some (Core ty, env, _) ->
+        | Some (Core ty, _env, _) ->
           match ty.desc with
           | Tconstr (path, _, _) -> Path.same path Predef.path_unit
           | _ -> false

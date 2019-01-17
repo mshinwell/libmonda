@@ -31,7 +31,8 @@
 
 module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S)
       (Type_helper : Type_helper_intf.S
-        with module Cmt_cache := Cmt_cache) =
+        with module Cmt_cache := Cmt_cache
+        with module D := D) =
 struct
   type t = {
     cmt_cache : Cmt_cache.t;
@@ -95,8 +96,10 @@ struct
       match Cmt_cache.find_cached_type t.cmt_cache ~cached_type:dwarf_type with
       | Some type_and_env -> Some type_and_env
       | None ->
+        (* CR-someday mshinwell: Add a [struct frame_info*] argument to the
+           "type_print" language hook in GDB. *)
         Type_helper.type_and_env_from_dwarf_type ~dwarf_type
-          ~cmt_cache:t.cmt_cache
+          ~cmt_cache:t.cmt_cache D.Frame.none
     in
     print_given_type_and_env ?variable_name ~always_print:() formatter
       type_and_env

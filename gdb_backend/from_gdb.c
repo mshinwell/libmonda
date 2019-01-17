@@ -167,8 +167,8 @@ monda_val_print (struct type* type, struct frame_info* frame,
         fprintf(stderr, "monda_val_print -> c_val_print (2)\n");
         fflush(stderr);
         */
-        c_val_print (type, embedded_offset, address, stream, recurse, val,
-                     options);
+        c_val_print (type, frame, embedded_offset, address, stream, recurse,
+                     val, options);
       }
     }
   }

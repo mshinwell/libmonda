@@ -676,13 +676,18 @@ caml_value monda_set_wrap_column (caml_value v_col)
 }
 
 extern "C"
+caml_value monda_get_selected_frame (caml_value v_unit)
+{
+  struct frame_info *frame = get_selected_frame_if_set ();
+  return caml_copy_nativeint ((intnat) frame);
+}
+
+extern "C"
 caml_value monda_dwarf_type_of_argument (caml_value v_call_site,
                                          caml_value v_index)
 {
-  CAMLparam3 (v_call_site, v_frame, v_index);
+  CAMLparam2 (v_call_site, v_index);
   CAMLlocal1 (v_result);
-
-  struct frame_info* frame = (struct frame_info*) Nativeint_val (v_frame);
 
   struct call_site* call_site =
     (struct call_site*) Nativeint_val (v_call_site);
@@ -694,7 +699,7 @@ caml_value monda_dwarf_type_of_argument (caml_value v_call_site,
     CAMLreturn (Val_long (0 /* None */));
   }
 
-  struct call_site_parameter* arg = call_site->parameter[index];
+  struct call_site_parameter* arg = &call_site->parameter[index];
   if (arg == NULL || arg->type == NULL || TYPE_NAME (arg->type) == NULL) {
     CAMLreturn (Val_long (0 /* None */));
   }
@@ -710,7 +715,8 @@ caml_value monda_caller_of_frame (caml_value v_frame)
   CAMLparam1 (v_frame);
   CAMLlocal1 (v_result);
 
-  struct frame_info* frame = (struct frame_info*) Nativeint_val (frame);
+  struct frame_info* frame =
+    (struct frame_info*) Nativeint_val ((intnat) v_frame);
 
   TRY {
     struct gdbarch* prev_arch = frame_unwind_arch (frame);
@@ -752,8 +758,8 @@ caml_value monda_caller_of_frame (caml_value v_frame)
     }
 
     v_result = caml_alloc (2, 0 /* Some */);
-    Store_field (v_result, 0, caml_copy_nativeint (caller_frame));
-    Store_field (v_result, 1, caml_copy_nativeint (call_site));
+    Store_field (v_result, 0, caml_copy_nativeint ((intnat) caller_frame));
+    Store_field (v_result, 1, caml_copy_nativeint ((intnat) call_site));
     CAMLreturn (v_result);
   }
   CATCH (except, RETURN_MASK_ERROR) {
@@ -761,5 +767,5 @@ caml_value monda_caller_of_frame (caml_value v_frame)
   }
   END_CATCH
 
-  CAMLreturn (Val_long (0); /* None */);
+  CAMLreturn (Val_long (0) /* None */);
 }

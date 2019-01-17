@@ -57,6 +57,10 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
             cmt_leafname output_dir;
   *)
 
+  let type_is_polymorphic ty =
+    Btype.fold_type_expr (fun is_poly ty -> is_poly || Btype.is_Tvar ty)
+      false ty
+
   let rec type_and_env_from_dwarf_type ~dwarf_type ~cmt_cache frame =
     match type_and_env_from_dwarf_type0 ~dwarf_type ~cmt_cache with
     | None -> None
@@ -65,19 +69,19 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | Module _ -> result
       | Core ty ->
         let ty = Ctype.expand_head env ty in
-        let normal_case () = Some (ty, env, is_parameter) in
-        match ty with
-        | Tvar _ ->
-          begin match is_parameter with
+        let normal_case () = Some (Cmt_file.Core ty, env, is_parameter) in
+        if type_is_polymorphic ty then begin
+          match is_parameter with
           | Local -> normal_case ()
           | Parameter { index; } ->
             match D.Frame.caller frame with
             | None -> normal_case ()
             | Some (caller_frame, call_site) ->
-              match D.dwarf_type_of_argument caller_frame ~call_site ~index with
-              | None -> normal_case () ->
+              match D.Call_site.dwarf_type_of_argument call_site ~index with
+              | None -> normal_case ()
               | Some dwarf_type ->
                 type_and_env_from_dwarf_type ~dwarf_type ~cmt_cache caller_frame
-          end
-        | _ -> normal_case ()
+        end else begin
+          normal_case ()
+        end
 end

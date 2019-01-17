@@ -31,7 +31,8 @@
 
 module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S)
       (Type_helper : Type_helper_intf.S
-        with module Cmt_cache := Cmt_cache)
+        with module Cmt_cache := Cmt_cache
+        with module D := D)
       (Type_printer : Type_printer_intf.S
         with module Cmt_cache := Cmt_cache) :
 sig

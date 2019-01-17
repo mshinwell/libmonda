@@ -477,20 +477,25 @@ module Call_site = struct
   type t = nativeint
 
   external dwarf_type_of_argument
-     : Call_site.t
+     : t
     -> int
     -> string option
     = "monda_dwarf_type_of_argument"
 
-  let dwarf_type_of_argument frame ~call_site ~index =
-    dwarf_type_of_argument frame call_site index
+  let dwarf_type_of_argument t ~index =
+    dwarf_type_of_argument t index
 end
 
 module Frame = struct
   type t = nativeint
 
+  let none = 0n
+
+  external get_selected_frame : unit -> t
+    = "monda_get_selected_frame"
+
   external caller
-     : Frame.t
+     : t
     -> (t * Call_site.t) option
     = "monda_caller_of_frame"
 end

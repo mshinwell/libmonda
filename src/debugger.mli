@@ -174,13 +174,16 @@ module type S_base = sig
 
     val dwarf_type_of_argument
        : t
-      -> Frame.t
       -> index:int
       -> string option
   end
 
   module Frame : sig
     type t
+
+    val none : t
+
+    val get_selected_frame : unit -> t
 
     (** Return the call site in the frame F that called the selected frame (not
         the return address of the current frame), together with F. This PC value

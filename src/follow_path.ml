@@ -287,7 +287,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     let found ~starting_point ~dwarf_type ~rest_of_path =
       let type_and_env =
         Type_helper.type_and_env_from_dwarf_type ~dwarf_type
-          ~cmt_cache:t.cmt_cache
+          ~cmt_cache:t.cmt_cache (D.Frame.get_selected_frame ())
       in
       evaluate_given_starting_point t ~path:rest_of_path
         type_and_env ~lvalue_or_rvalue ~must_be_mutable
