@@ -54,6 +54,13 @@ val type_of_ident
   -> stamp:int
   -> (core_or_module_type * Env.t) option
 
+(* CR mshinwell: Add column positions, and propagate them through gdb. *)
+val type_of_call_site_argument
+   : t
+  -> line:int
+  -> index:int
+  -> (core_or_module_type * Env.t) option
+
 (* CR mshinwell: replace this crap with a variant *)
 val distinguished_var_name : string
 

@@ -428,12 +428,9 @@ type ocaml_specific_compilation_unit_info = {
   linker_dirs : string list;
 }
 
-let ocaml_specific_compilation_unit_info ~unit_name
+let decode_ocaml_specific_compilation_unit_info
+      (unit_info : Gdb_indirect.raw_ocaml_specific_compilation_unit_info option)
       : ocaml_specific_compilation_unit_info option =
-  let unit_name = Ident.name unit_name in
-  let unit_info =
-    Gdb_indirect.raw_ocaml_specific_compilation_unit_info ~unit_name
-  in
   match unit_info with
   | None -> None
   | Some unit_info ->
@@ -468,6 +465,13 @@ let ocaml_specific_compilation_unit_info ~unit_name
       }
     | _, _, _, _ -> None
 
+let ocaml_specific_compilation_unit_info ~unit_name =
+  let unit_name = Ident.name unit_name in
+  let unit_info =
+    Gdb_indirect.raw_ocaml_specific_compilation_unit_info ~unit_name
+  in
+  decode_ocaml_specific_compilation_unit_info unit_info
+
 let find_and_open ~filename ~dirname =
   match Gdb_indirect.find_and_open ~filename ~dirname with
   | None -> None
@@ -475,6 +479,18 @@ let find_and_open ~filename ~dirname =
 
 module Call_site = struct
   type t = nativeint
+
+  external pc : t -> target_addr
+    = "monda_pc_of_call_site"
+
+  external ocaml_specific_compilation_unit_info
+     : t
+    -> Gdb_indirect.raw_ocaml_specific_compilation_unit_info option
+    = "monda_ocaml_specific_compilation_unit_info_of_call_site"
+
+  let ocaml_specific_compilation_unit_info t =
+    let info = ocaml_specific_compilation_unit_info t in
+    decode_ocaml_specific_compilation_unit_info info
 
   external dwarf_type_of_argument
      : t

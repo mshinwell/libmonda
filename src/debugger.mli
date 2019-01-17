@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2013--2019 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -160,8 +160,24 @@ module type S_base = sig
     -> use_previous_line_number_if_on_boundary:bool
     -> (string * (int option)) option
 
+  type ocaml_specific_compilation_unit_info = private {
+    compiler_version : string;
+    unit_name : Ident.t;
+    config_digest : Digest.t;
+    prefix_name : string;
+    linker_dirs : string list;
+  }
+
   module Call_site : sig
     type t
+
+    (** An address within the call instruction. *)
+    val pc : t -> target_addr
+
+    (** The OCaml-specific unit info at the call site. *)
+    val ocaml_specific_compilation_unit_info
+       : t
+      -> ocaml_specific_compilation_unit_info option
 
     (** Return the OCaml-formatted DWARF type of the given function argument
         (numbered left to right starting from zero, following [Is_parameter] in
@@ -195,14 +211,6 @@ module type S_base = sig
         these cases, [None] is returned. *)
     val caller : t -> caller_result
   end
-
-  type ocaml_specific_compilation_unit_info = private {
-    compiler_version : string;
-    unit_name : Ident.t;
-    config_digest : Digest.t;
-    prefix_name : string;
-    linker_dirs : string list;
-  }
 
   (** Extract values for the given compilation unit that are transmitted via
       OCaml-specific DWARF attributes. *)

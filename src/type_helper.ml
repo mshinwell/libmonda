@@ -105,10 +105,47 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
               end;
               match D.Call_site.dwarf_type_of_argument call_site ~index with
               | None ->
+                (* The DWARF type may be absent if there was no identifier
+                   named in the provenance of the corresponding argument
+                   register.  In this case, try to use the location of the
+                   call instruction instead, looking the type up using that
+                   in the .cmt file. *)
                 if Monda_debug.debug then begin
-                  Printf.fprintf stdout "Couldn't find arg type.\n"
+                  Printf.fprintf stdout "Couldn't find DWARF arg type.\n"
                 end;
-                normal_case ()
+                begin match
+                  D.filename_and_line_number_of_pc (D.Call_site.pc call_site)
+                    ~use_previous_line_number_if_on_boundary:true
+                with
+                | None | Some (_, None) ->
+                  if Monda_debug.debug then begin
+                    Printf.fprintf stdout "Couldn't find call site location.\n"
+                  end;
+                  normal_case ()
+                | Some (_filename, Some line) ->
+                  match
+                    D.Call_site.ocaml_specific_compilation_unit_info call_site
+                  with
+                  | None -> normal_case ()
+                  | Some unit_info ->
+                    let comp_unit =
+                      (* CR mshinwell: do something so this isn't here *)
+                      Compilation_unit.create unit_info.unit_name
+                        (Linkage_name.create (
+                          Compilenv.make_symbol
+                            ~unitname:(Ident.name unit_info.unit_name)
+                            None))
+                    in
+                    match Cmt_cache.load cmt_cache comp_unit with
+                    | None -> normal_case ()
+                    | Some call_site_cmt ->
+                      match
+                        Cmt_file.type_of_call_site_argument call_site_cmt ~line
+                          ~index
+                      with
+                      | None -> normal_case ()
+                      | Some (ty, env) -> Some (ty, env, is_parameter)
+                end
               | Some dwarf_type ->
                 type_and_env_from_dwarf_type ~dwarf_type ~cmt_cache caller_frame
         end else begin

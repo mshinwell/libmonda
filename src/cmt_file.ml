@@ -33,14 +33,25 @@ let debug = Monda_debug.debug
 
 let distinguished_var_name = "camlaverydistinguishedvariableindeed"
 
-module LocTable = Map.Make (struct
-  type t = Location.t
-  let compare x y =
-    let lnum x = x.Location.loc_start.Lexing.pos_lnum in
-    let cnum x = x.Location.loc_start.Lexing.pos_cnum in
-    let start = compare (lnum x) (lnum y) in
-    if start = 0 then compare (cnum x) (cnum y) else start
-end)
+(* CR mshinwell: bad name, not a "table"; move to [Location] *)
+module LocTable = struct
+  include Map.Make (struct
+    type t = Location.t
+    let compare x y =
+      let lnum x = x.Location.loc_start.Lexing.pos_lnum in
+      (* CR mshinwell: See CR in the .mli *)
+      compare (lnum x) (lnum y)
+  (*
+      let cnum x = x.Location.loc_start.Lexing.pos_cnum in
+      let start = compare (lnum x) (lnum y) in
+      if start = 0 then compare (cnum x) (cnum y) else start
+  *)
+  end)
+
+  let add_or_remove_if_clash t loc datum =
+    if mem loc t then remove loc t
+    else add loc datum t
+end
 
 module List = ListLabels
 
@@ -63,6 +74,7 @@ type t = {
       locations, you might want to do the same (but for types instead of
       positions, ofc) here. *)
   idents_to_types : (core_or_module_type * Env.t) String.Map.t;
+  application_points : ((core_or_module_type * Env.t) option array) LocTable.t;
 }
 
 let insert_module_from_expr (idents_to_types, app_points) id
@@ -147,6 +159,17 @@ and process_expression ~(exp : T.expression)
     in
     process_cases ~cases (idents_to_types, app_points)
   | Texp_apply (exp, args) ->
+    let arg_tys =
+      Array.map (fun (_label, expr_opt) ->
+          match expr_opt with
+          | None -> None
+          | Some (expr : Typedtree.expression) ->
+            Some (Core expr.exp_type, expr.exp_env))
+        (Array.of_list args)
+    in
+    let app_points =
+      LocTable.add_or_remove_if_clash app_points exp.exp_loc arg_tys
+    in
 (*
     (* CR mshinwell: what happens when [exp] has already been partially
        applied? *)
@@ -334,7 +357,7 @@ let load_from_channel_then_close ~filename chan ~add_to_load_path =
   if debug then Printf.printf "attempting to load cmt file: %s\n%!" filename;
   let cmt_infos = Cmt_format.read_cmt_from_channel ~filename chan in
   add_to_load_path (load_path_from_cmt_infos cmt_infos);
-  let idents_to_types, _application_points =
+  let idents_to_types, application_points =
     let idents, app_points = create_idents_to_types_map ~cmt_infos in
     try
       let idents =
@@ -343,9 +366,16 @@ let load_from_channel_then_close ~filename chan ~add_to_load_path =
         ) idents
       in
       let app_points =
-        LocTable.map (fun (type_expr, env) ->
-          type_expr, Env.env_of_only_summary Envaux.env_from_summary env
-        ) app_points
+        LocTable.map (fun args ->
+            Array.map (function
+                | None -> None
+                | Some (ty, env) ->
+                  let env =
+                    Env.env_of_only_summary Envaux.env_from_summary env
+                  in
+                  Some (ty, env))
+              args)
+          app_points
       in
       let distinguished_ident =
         let ident = ref None in
@@ -387,6 +417,7 @@ let load_from_channel_then_close ~filename chan ~add_to_load_path =
   let t =
     { cmt_infos;
       idents_to_types;
+      application_points;
     }
   in
   Some t
@@ -401,5 +432,20 @@ let type_of_ident t ~name ~stamp =
     if debug then Printf.printf "type_of_ident failed\n%!";
     None
   end
+
+let type_of_call_site_argument t ~line ~index =
+  let loc =
+    { Location.none with
+      loc_start =
+        { Lexing.dummy_pos with
+          pos_lnum = line;
+        };
+    }
+  in
+  match LocTable.find loc t.application_points with
+  | exception Not_found -> None
+  | args ->
+    if index < 0 || index >= Array.length args then None
+    else args.(index)
 
 let cmt_infos t = t.cmt_infos

@@ -57,6 +57,7 @@
 #include "frame.h"
 #include "dwarf2loc.h"
 #include "block.h"
+#include "dwarf2read.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -199,7 +200,8 @@ copy_string_or_none(const char* str)
 }
 
 static caml_value
-build_ocaml_specific_compilation_unit_info(struct compunit_symtab* cu)
+build_ocaml_specific_compilation_unit_info(
+  struct ocaml_compilation_unit_info* info)
 {
   CAMLparam0();
   CAMLlocal1(v_comp_unit_info);
@@ -207,19 +209,19 @@ build_ocaml_specific_compilation_unit_info(struct compunit_symtab* cu)
   v_comp_unit_info = caml_alloc(5, 0);
 
   Store_field(v_comp_unit_info, 0,
-              copy_string_or_none(cu->ocaml.compiler_version));
+              copy_string_or_none(info->compiler_version));
 
   Store_field(v_comp_unit_info, 1,
-              copy_string_or_none(cu->ocaml.unit_name));
+              copy_string_or_none(info->unit_name));
 
   Store_field(v_comp_unit_info, 2,
-              copy_string_or_none(cu->ocaml.config_digest));
+              copy_string_or_none(info->config_digest));
 
   Store_field(v_comp_unit_info, 3,
-              copy_string_or_none(cu->ocaml.prefix_name));
+              copy_string_or_none(info->prefix_name));
 
   Store_field(v_comp_unit_info, 4,
-              copy_string_or_none(cu->ocaml.linker_dirs));
+              copy_string_or_none(info->linker_dirs));
 
   CAMLreturn(v_comp_unit_info);
 }
@@ -242,7 +244,7 @@ monda_ocaml_specific_compilation_unit_info(caml_value v_unit_name)
   ALL_COMPUNITS(objfile, cu) {
     if (cu->ocaml.unit_name != NULL
           && strcmp(cu->ocaml.unit_name, String_val(v_unit_name)) == 0) {
-      v_comp_unit_info = build_ocaml_specific_compilation_unit_info(cu);
+      v_comp_unit_info = build_ocaml_specific_compilation_unit_info(&cu->ocaml);
       v_some_comp_unit_info = caml_alloc_small(1, 0 /* Some */);
       Field(v_some_comp_unit_info, 0) = v_comp_unit_info;
       CAMLreturn(v_some_comp_unit_info);
@@ -684,6 +686,40 @@ caml_value monda_get_selected_frame (caml_value v_unit)
 {
   struct frame_info *frame = get_selected_frame_if_set ();
   return caml_copy_nativeint ((intnat) frame);
+}
+
+extern "C"
+caml_value monda_pc_of_call_site (caml_value v_call_site)
+{
+  struct call_site* call_site =
+    (struct call_site*) Nativeint_val (v_call_site);
+  /* The "-1" is to get back into the call instruction itself. */
+  return caml_copy_nativeint ((intnat) (call_site->pc - 1));
+}
+
+extern "C"
+caml_value monda_ocaml_specific_compilation_unit_info_of_call_site
+  (caml_value v_call_site)
+{
+  CAMLparam1 (v_call_site);
+  CAMLlocal1 (v_result);
+
+  struct call_site* call_site =
+    (struct call_site*) Nativeint_val (v_call_site);
+
+  assert (call_site->per_cu != NULL);
+  struct dwarf2_cu* cu = call_site->per_cu->cu;
+
+  if (cu == NULL) {
+    CAMLreturn(Val_long (0));
+  }
+
+  v_result = caml_alloc (1, 0);
+  Store_field (v_result, 0,
+               build_ocaml_specific_compilation_unit_info(
+                 get_ocaml_compilation_unit_info(cu)));
+
+  CAMLreturn(v_result);
 }
 
 extern "C"
