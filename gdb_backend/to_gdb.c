@@ -54,6 +54,8 @@
 #include "source.h"
 #include "objfiles.h"
 #include "cli-style.h"
+#include "frame.h"
+#include "dwarf2loc.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -671,4 +673,66 @@ caml_value monda_set_wrap_column (caml_value v_col)
 {
   set_wrap_column (Long_val (v_col));
   return Val_long (0);
+}
+
+extern "C"
+caml_value monda_caller_of_frame (caml_value v_frame)
+{
+  CAMLparam1 (v_frame);
+  CAMLlocal1 (v_result);
+
+  struct frame_info* frame = (struct frame_info*) Nativeint_val (frame);
+
+  TRY {
+    struct gdbarch* prev_arch = frame_unwind_arch (frame);
+    CORE_ADDR return_addr = frame_unwind_caller_pc (frame);
+
+    struct symbol* func = get_frame_function (frame);
+    CORE_ADDR callee_addr = SYMBOL_VALUE_ADDRESS (func);
+
+    /* Manually interrogate the DWARF information; it isn't clear how to
+       determine from just the [struct frame_info] whether there is any
+       ambiguity about any tail call chain prior to [frame]. */
+    /* CR-someday mshinwell: Maybe we could add a new gdb frame type which
+       identifies an ambiguity. */
+    struct call_site_chain* chain =
+      call_site_find_chain (prev_arch, return_addr, callee_addr);
+
+    if (chain == NULL
+        || chain->length < 0
+        || chain->callers < 0
+        /* We would never expect any newer tail call frames than the one
+           provided: */
+        || chain->callees != 0
+        /* Following the condition in the comment in dwarf2loc.h: */
+        || chain->callers + chain->callees < chain->length
+        || chain->callers + chain->callees > chain->length) {
+      CAMLreturn (Val_long (0) /* None */);
+    }
+
+    assert (chain->length == chain->callers && chain->callers >= 0);
+
+    int prev_frame_is_tailcall = (chain->length > 0);
+    frame_info* caller_frame = get_prev_frame_always (frame);
+
+    if (prev_frame_is_tailcall) {
+      assert (get_frame_type (caller_frame) == TAILCALL_FRAME);
+    }
+
+    CORE_ADDR call_site = get_frame_pc (caller_frame);
+    if (!prev_frame_is_tailcall) {
+      assert (call_site == return_addr);
+    }
+
+    v_result = caml_alloc (2, 0 /* Some */);
+    Store_field (v_result, 0, caml_copy_nativeint (caller_frame));
+    Store_field (v_result, 1, caml_copy_nativeint (call_site));
+    CAMLreturn (v_result);
+  }
+  CATCH (except, RETURN_MASK_ERROR) {
+    /* nothing */
+  }
+  END_CATCH
+
+  CAMLreturn (Val_long (0); /* None */);
 }

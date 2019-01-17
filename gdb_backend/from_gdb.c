@@ -4,7 +4,7 @@
 /*                                                                         */
 /*         Mark Shinwell and Frederic Bour, Jane Street Europe             */
 /*                                                                         */
-/*  Copyright (c) 2013--2016 Jane Street Group, LLC                        */
+/*  Copyright (c) 2013--2019 Jane Street Group, LLC                        */
 /*                                                                         */
 /*  Permission is hereby granted, free of charge, to any person obtaining  */
 /*  a copy of this software and associated documentation files             */
@@ -72,7 +72,8 @@ monda_init (void)
 }
 
 extern "C" void
-monda_val_print (struct type* type, int embedded_offset, CORE_ADDR address,
+monda_val_print (struct type* type, struct frame_info* frame,
+                 int embedded_offset, CORE_ADDR address,
                  struct ui_file* stream, int recurse, struct value* val,
                  const struct value_print_options* options, int depth,
                  int max_string_length, int only_print_short_type,
@@ -80,8 +81,8 @@ monda_val_print (struct type* type, int embedded_offset, CORE_ADDR address,
 {
   CAMLparam0();
   CAMLlocal4(v_type, v_stream, v_value, v_search_path);
-  CAMLlocal1(v_val);
-  CAMLlocalN(args, 11);
+  CAMLlocal2(v_val, v_frame);
+  CAMLlocalN(args, 12);
   static caml_value* callback = NULL;
   int is_synthetic_pointer;
   const gdb_byte* valaddr;
@@ -130,8 +131,8 @@ monda_val_print (struct type* type, int embedded_offset, CORE_ADDR address,
       fprintf(stderr, "monda_val_print -> c_val_print (1)\n");
       fflush(stderr);
       */
-      c_val_print(type, valaddr, embedded_offset, address, stream, recurse,
-                  val, options, depth);
+      c_val_print(type, frame, valaddr, embedded_offset, address, stream,
+                  recurse, val, options, depth);
     }
     else
 #endif
@@ -140,6 +141,7 @@ monda_val_print (struct type* type, int embedded_offset, CORE_ADDR address,
       v_stream = caml_copy_int64((uint64_t) stream);
       v_search_path = caml_copy_string("");  /* CR mshinwell: remove */
       v_val = caml_copy_nativeint((intnat) val);
+      v_frame = caml_copy_nativeint((intnat) frame);
 
       /* N.B. [Store_field] must not be used on [args]! */
       args[0] = Val_bool(is_synthetic_pointer);
@@ -153,13 +155,14 @@ monda_val_print (struct type* type, int embedded_offset, CORE_ADDR address,
       args[8] = v_search_path;
       args[9] = Val_bool(only_print_short_type);
       args[10] = Val_bool(only_print_short_value);
+      args[11] = v_frame;
 /*
       fprintf(stderr, "monda_val_print -> OCaml printer.  Type '%s'\n", TYPE_NAME(type));
       fflush(stderr);
       */
 
       /* CR mshinwell: This should catch any OCaml exceptions. */
-      if (caml_callbackN(*callback, 11, args) == Val_false) {
+      if (caml_callbackN(*callback, 12, args) == Val_false) {
 /*
         fprintf(stderr, "monda_val_print -> c_val_print (2)\n");
         fflush(stderr);

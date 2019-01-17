@@ -58,7 +58,8 @@ let print_value is_synthetic
       (struct_value : Gdb_debugger_with_traversal.Synthetic_ptr.t)
       (stream : Gdb_debugger.stream) dwarf_type summary
       max_depth max_string_length cmt_file_search_path
-      only_print_short_type only_print_short_value =
+      only_print_short_type only_print_short_value
+      (frame : Gdb_debugger_with_traversal.Frame.t) =
   (* When doing e.g. "inf reg", gdb passes "int64_t" as the type to print
      at.  Since we can't yet print out-of-heap values etc, don't try to
      be fancy here. *)
@@ -80,6 +81,7 @@ Format.eprintf "From_gdb_ocaml.print_value OVP starting.  Scrutinee %a.  \
 *)
     let formatter = Gdb_debugger.formatter stream in
     Value_printer.print value_printer
+      frame
       ~scrutinee
       ~formatter
       ~dwarf_type

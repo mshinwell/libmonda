@@ -49,8 +49,6 @@ module Result : sig
     | Obj_boxed_not_traversable
     | Obj_immediate
     | Obj_immediate_but_should_be_boxed
-    | Polymorphic_or_else_obj_boxed_traversable
-    | Polymorphic_or_else_obj_immediate
     | Unit
     | Abstract of Path.t
     | Array of Types.type_expr * Env.t

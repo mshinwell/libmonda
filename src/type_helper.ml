@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2013--2019 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -30,7 +30,7 @@
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
 module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
-  let type_and_env_from_dwarf_type ~dwarf_type ~cmt_cache =
+  let type_and_env_from_dwarf_type0 ~dwarf_type ~cmt_cache =
     let cmt_file_and_ident_name =
       match Dwarf_name_laundry.split_base_type_die_name dwarf_type with
       | None -> None
@@ -56,4 +56,28 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           Printf.eprintf ".cmt file %s in directory %s not found\n%!"
             cmt_leafname output_dir;
   *)
+
+  let rec type_and_env_from_dwarf_type ~dwarf_type ~cmt_cache frame =
+    match type_and_env_from_dwarf_type0 ~dwarf_type ~cmt_cache with
+    | None -> None
+    | (Some (ty, env, is_parameter)) as result ->
+      match ty with
+      | Module _ -> result
+      | Core ty ->
+        let ty = Ctype.expand_head env ty in
+        let normal_case () = Some (ty, env, is_parameter) in
+        match ty with
+        | Tvar _ ->
+          begin match is_parameter with
+          | Local -> normal_case ()
+          | Parameter { index; } ->
+            match D.Frame.caller frame with
+            | None -> normal_case ()
+            | Some (caller_frame, call_site) ->
+              match D.dwarf_type_of_argument caller_frame ~call_site ~index with
+              | None -> normal_case () ->
+              | Some dwarf_type ->
+                type_and_env_from_dwarf_type ~dwarf_type ~cmt_cache caller_frame
+          end
+        | _ -> normal_case ()
 end

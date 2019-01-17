@@ -162,11 +162,6 @@ struct
             raw (V.tag_exn v)
         | None -> Format.fprintf formatter "<synthetic pointer>"
         end
-      | Polymorphic_or_else_obj_boxed_traversable ->
-        if state.summary then Format.fprintf formatter "..."
-        else print_multiple_without_type_info t ~state v
-      | Polymorphic_or_else_obj_immediate ->
-        print_int t ~state v
       | Unit -> Format.fprintf formatter "()"
       | Int ->
         begin match V.int v with
@@ -1147,10 +1142,6 @@ struct
       else Format.fprintf formatter "unboxed (?)"
     | Obj_boxed_traversable -> Format.fprintf formatter "boxed"
     | Obj_boxed_not_traversable -> Format.fprintf formatter "boxed-not-trav."
-    | Polymorphic_or_else_obj_immediate ->
-      Format.fprintf formatter "unboxed"
-    | Polymorphic_or_else_obj_boxed_traversable ->
-      Format.fprintf formatter "boxed"
     | Int ->
       begin match V.int v with
       | Some i -> Format.fprintf formatter "%d" i
@@ -1196,10 +1187,6 @@ struct
       else Format.fprintf formatter "unboxed (?)"
     | Obj_boxed_traversable -> Format.fprintf formatter "boxed"
     | Obj_boxed_not_traversable -> Format.fprintf formatter "boxed-not-trav."
-    | Polymorphic_or_else_obj_immediate ->
-      Format.fprintf formatter "unboxed"
-    | Polymorphic_or_else_obj_boxed_traversable ->
-      Format.fprintf formatter "boxed"
     | Int ->
       begin match V.int v with
       | Some _ -> Format.fprintf formatter "int"
@@ -1231,7 +1218,8 @@ struct
     | Unknown -> Format.fprintf formatter "unknown"
 
   (* CR mshinwell: remove search path param *)
-  let print t ~scrutinee ~dwarf_type ~summary ~max_depth ~max_string_length
+  let print t frame ~scrutinee ~dwarf_type ~summary ~max_depth
+        ~max_string_length
         ~cmt_file_search_path:_ ~formatter ~only_print_short_type
         ~only_print_short_value =
     Clflags.real_paths := false;  (* Enable short-paths. *)
@@ -1247,7 +1235,7 @@ struct
         | Some type_and_env -> Some type_and_env
         | None ->
           Type_helper.type_and_env_from_dwarf_type ~dwarf_type
-            ~cmt_cache:t.cmt_cache
+            ~cmt_cache:t.cmt_cache frame
       in
       let is_unit =
         (* Print variables (in particular parameters) of type [unit] even when
@@ -1255,7 +1243,6 @@ struct
         match type_of_ident with
         | None | Some (Module _, _, _) -> false
         | Some (Core ty, env, _) ->
-          let ty = Ctype.expand_head env ty in
           match ty.desc with
           | Tconstr (path, _, _) -> Path.same path Predef.path_unit
           | _ -> false
