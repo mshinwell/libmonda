@@ -185,11 +185,15 @@ module type S_base = sig
 
     val get_selected_frame : unit -> t
 
+    type caller_result = private
+      | No_caller
+      | Caller of t * Call_site.t
+
     (** Return the call site in the frame F that called the selected frame (not
         the return address of the current frame), together with F. This PC value
         may not always be known, for example in some tail call scenarios; in
         these cases, [None] is returned. *)
-    val caller : t -> (t * Call_site.t) option
+    val caller : t -> caller_result
   end
 
   type ocaml_specific_compilation_unit_info = private {

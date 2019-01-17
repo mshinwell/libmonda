@@ -124,6 +124,7 @@ let evaluate (path : string) (cmt_file_search_path : string)
   with
   | None -> Failure
   | Some (rvalue, ty, env) ->
+    (* CR mshinwell: Beware: we should not cache polymorphic types *)
     let type_name = Cmt_cache.cache_type cmt_cache ty env Is_parameter.local in
     Ok { rvalue; type_name; }
 

@@ -56,6 +56,7 @@
 #include "cli-style.h"
 #include "frame.h"
 #include "dwarf2loc.h"
+#include "block.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -75,6 +76,9 @@
    that there is a single return point.  This avoids any question about
    whether returns are permissible inside the try/catch blocks and ensures
    that we do not need to use [CAMLdrop].
+
+   CR mshinwell: We appear not to be following this rule any more.  It may
+   not be necessary to do so.
 */
 
 #if 0
@@ -695,12 +699,12 @@ caml_value monda_dwarf_type_of_argument (caml_value v_call_site,
   int index = Long_val (v_index);
   assert (index >= 0);
 
-  if (index > call_site->parameter_count) {
+  if (index >= call_site->parameter_count) {
     CAMLreturn (Val_long (0 /* None */));
   }
 
   struct call_site_parameter* arg = &call_site->parameter[index];
-  if (arg == NULL || arg->type == NULL || TYPE_NAME (arg->type) == NULL) {
+  if (arg->type == NULL || TYPE_NAME (arg->type) == NULL) {
     CAMLreturn (Val_long (0 /* None */));
   }
 
@@ -722,8 +726,11 @@ caml_value monda_caller_of_frame (caml_value v_frame)
     struct gdbarch* prev_arch = frame_unwind_arch (frame);
     CORE_ADDR return_addr = frame_unwind_caller_pc (frame);
 
-    struct symbol* func = get_frame_function (frame);
-    CORE_ADDR callee_addr = SYMBOL_VALUE_ADDRESS (func);
+    CORE_ADDR callee_addr;
+
+    if (!get_frame_func_if_available (frame, &callee_addr)) {
+      CAMLreturn (Val_long (0) /* None */);
+    }
 
     /* Manually interrogate the DWARF information; it isn't clear how to
        determine from just the [struct frame_info] whether there is any
@@ -733,6 +740,12 @@ caml_value monda_caller_of_frame (caml_value v_frame)
     struct call_site_chain* chain =
       call_site_find_chain (prev_arch, return_addr, callee_addr);
 
+    fprintf(stderr, "Chain from RA %p -> callee %p; chain %p; length %d, callers %d\n",
+            (void*) return_addr, (void*) callee_addr,
+            chain,
+            chain == NULL ? -1 : chain->length,
+            chain == NULL ? -1 : chain->callers);
+
     if (chain == NULL  /* there is an ambiguity */
         || chain->length < 0
         || chain->callers < 0
@@ -740,7 +753,7 @@ caml_value monda_caller_of_frame (caml_value v_frame)
            provided: */
         || chain->callees != 0
         || chain->callers != chain->length) {
-      CAMLreturn (Val_long (0) /* None */);
+      CAMLreturn (Val_long (0));
     }
 
     assert (chain->length == chain->callers && chain->callers >= 0);
@@ -748,24 +761,31 @@ caml_value monda_caller_of_frame (caml_value v_frame)
     int prev_frame_is_tailcall = (chain->length > 0);
     frame_info* caller_frame = get_prev_frame_always (frame);
 
+    struct call_site* call_site;
+
     if (prev_frame_is_tailcall) {
       assert (get_frame_type (caller_frame) == TAILCALL_FRAME);
+      assert (chain->callers >= 1);
+      call_site = chain->call_site[chain->callers - 1];
+    } else {
+      /* [chain] never contains the callee's or the caller's [call_site]
+         structure. */
+      call_site = call_site_for_pc (prev_arch, return_addr);
     }
 
-    struct call_site* call_site = chain->call_site[chain->callers - 1];
-    if (!prev_frame_is_tailcall) {
-      assert (call_site->pc == return_addr);
+    if (call_site == NULL) {
+      CAMLreturn (Val_long (0));
     }
 
-    v_result = caml_alloc (2, 0 /* Some */);
+    v_result = caml_alloc (2, 0);
     Store_field (v_result, 0, caml_copy_nativeint ((intnat) caller_frame));
     Store_field (v_result, 1, caml_copy_nativeint ((intnat) call_site));
     CAMLreturn (v_result);
   }
   CATCH (except, RETURN_MASK_ERROR) {
-    /* nothing */
+    CAMLreturn (Val_long (0));
   }
   END_CATCH
 
-  CAMLreturn (Val_long (0) /* None */);
+  CAMLreturn (Val_long (0));
 }

@@ -494,9 +494,17 @@ module Frame = struct
   external get_selected_frame : unit -> t
     = "monda_get_selected_frame"
 
+  type caller_result =
+    | No_caller
+    | Caller of t * Call_site.t
+
+  (* Silence erroneous warning 37. *)
+  let (_ : caller_result) = No_caller
+  let (_ : caller_result) = Caller (none, 0n)
+
   external caller
      : t
-    -> (t * Call_site.t) option
+    -> caller_result
     = "monda_caller_of_frame"
 end
 

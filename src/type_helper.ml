@@ -57,31 +57,64 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
             cmt_leafname output_dir;
   *)
 
-  let type_is_polymorphic ty =
-    Btype.fold_type_expr (fun is_poly ty -> is_poly || Btype.is_Tvar ty)
+  let type_is_polymorphic env ty =
+    Btype.fold_type_expr (fun is_poly ty ->
+        is_poly || Btype.is_Tvar (Ctype.expand_head env ty))
       false ty
 
   let rec type_and_env_from_dwarf_type ~dwarf_type ~cmt_cache frame =
+    if Monda_debug.debug then begin
+      Printf.fprintf stdout "Checking DWARF type %s\n" dwarf_type
+    end;
     match type_and_env_from_dwarf_type0 ~dwarf_type ~cmt_cache with
-    | None -> None
+    | None ->
+      if Monda_debug.debug then begin
+        Printf.fprintf stdout "Couldn't get OCaml type + env\n"
+      end;
+      None
     | (Some (ty, env, is_parameter)) as result ->
       match ty with
       | Module _ -> result
       | Core ty ->
         let ty = Ctype.expand_head env ty in
         let normal_case () = Some (Cmt_file.Core ty, env, is_parameter) in
-        if type_is_polymorphic ty then begin
+        if type_is_polymorphic env ty then begin
+          if Monda_debug.debug then begin
+            Printf.fprintf stdout "Type is polymorphic.\n"
+          end;
           match is_parameter with
-          | Local -> normal_case ()
+          | Local ->
+            if Monda_debug.debug then begin
+              Printf.fprintf stdout "Not a parameter.\n"
+            end;
+            normal_case ()
           | Parameter { index; } ->
+            if Monda_debug.debug then begin
+              Printf.fprintf stdout
+                "Type is polymorphic and that of a parameter.\n"
+            end;
             match D.Frame.caller frame with
-            | None -> normal_case ()
-            | Some (caller_frame, call_site) ->
+            | No_caller ->
+              if Monda_debug.debug then begin
+                Printf.fprintf stdout "Couldn't find caller frame.\n"
+              end;
+              normal_case ()
+            | Caller (caller_frame, call_site) ->
+              if Monda_debug.debug then begin
+                Printf.fprintf stdout "Found caller frame.\n"
+              end;
               match D.Call_site.dwarf_type_of_argument call_site ~index with
-              | None -> normal_case ()
+              | None ->
+                if Monda_debug.debug then begin
+                  Printf.fprintf stdout "Couldn't find arg type.\n"
+                end;
+                normal_case ()
               | Some dwarf_type ->
                 type_and_env_from_dwarf_type ~dwarf_type ~cmt_cache caller_frame
         end else begin
+          if Monda_debug.debug then begin
+            Printf.fprintf stdout "Type is not polymorphic.\n"
+          end;
           normal_case ()
         end
 end

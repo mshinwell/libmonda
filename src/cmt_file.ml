@@ -86,9 +86,11 @@ let insert_module_from_binding maps (module_binding : T.module_binding) =
 let rec process_pattern ~(pat : T.pattern) ~idents_to_types =
   match pat.pat_desc with
   | Tpat_var (ident, _loc) ->
+(*
     if debug then begin
       Printf.printf "process_pattern: Tpat_var %s\n%!" (Ident.unique_name ident)
     end;
+*)
     String.Map.add (Ident.unique_name ident)
       (Core pat.pat_type, pat.pat_env)
       idents_to_types

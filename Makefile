@@ -44,6 +44,7 @@ OCAMLOPT=$(OCAML_ROOT)/bin/ocamlopt.byte -verbose -I +compiler-libs -I ./src \
 # requirement for reading from the gdb build tree.
 
 # Linux
+DSYMUTIL=echo
 #CC=g++ -x c++ -std=gnu++11 -g -fPIC -O0 \
 #	-DLOCALEDIR="/Users/mark/dev/mshinwell-gdb-install/share/locale" \
 #	-DHAVE_CONFIG_H \
@@ -68,6 +69,7 @@ OCAMLOPT=$(OCAML_ROOT)/bin/ocamlopt.byte -verbose -I +compiler-libs -I ./src \
 #	-Wno-sign-compare -Wno-narrowing -Wno-error=maybe-uninitialized
 
 # macOS
+DSYMUTIL=dsymutil
 CC=g++ -x c++ -std=gnu++11 -g -fPIC -O0 \
   -I$(OCAML_ROOT)/lib/ocaml \
   -I$(GDB_ROOT)/gdb \
@@ -147,6 +149,7 @@ all: $(GDB_BACKEND) $(SRC) src/our_name.out
 	  ocamlcommon.cmxa ocamloptcomp.cmxa dynlink.cmxa bigarray.cmxa unix.cmxa \
 	  $(SRC) $(GDB_BACKEND) gdb_backend/to_gdb.o \
     gdb_backend/from_gdb.o
+	$(DSYMUTIL) $(shell cat src/our_name.out)_gdb.so
 
 .PHONY: clean
 clean: 
