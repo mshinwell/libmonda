@@ -710,15 +710,12 @@ caml_value monda_ocaml_specific_compilation_unit_info_of_call_site
   struct compunit_symtab* cu_symtab = find_pc_compunit_symtab (call_site->pc);
 
   if (cu_symtab == NULL) {
-    fprintf(stderr, "compunit_symtab is NULL\n");
     CAMLreturn(Val_long (0));
   }
 
   v_result = caml_alloc (1, 0);
   Store_field (v_result, 0,
                build_ocaml_specific_compilation_unit_info(&cu_symtab->ocaml));
-
-  fprintf(stderr, "got CU info for call site\n");
 
   CAMLreturn(v_result);
 }
