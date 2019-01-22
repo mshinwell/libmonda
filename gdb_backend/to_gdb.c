@@ -61,6 +61,7 @@
 
 #include <ctype.h>
 #include <stdio.h>
+#include <cassert>
 
 #define CAML_NAME_SPACE 1
 #define CAML_DO_NOT_TYPEDEF_VALUE 1
