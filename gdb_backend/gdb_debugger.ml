@@ -483,6 +483,22 @@ module Call_site = struct
   external pc : t -> target_addr
     = "monda_pc_of_call_site"
 
+  external line_number : t -> int
+    = "monda_line_number_of_call_site"
+
+  let line_number t =
+    let line = line_number t in
+    if line < 0 then None
+    else Some line
+
+  external column_number : t -> int
+    = "monda_column_number_of_call_site"
+
+  let column_number t =
+    let column = column_number t in
+    if column < 0 then None
+    else Some column
+
   external ocaml_specific_compilation_unit_info
      : t
     -> Gdb_indirect.raw_ocaml_specific_compilation_unit_info option

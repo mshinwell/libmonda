@@ -5,7 +5,7 @@
 /*                  Mark Shinwell, Jane Street Europe                     */
 /*                  with assistance from Frederic Bour                    */
 /*                                                                        */
-/* Copyright (c) 2013--2018 Jane Street Group, LLC                        */
+/* Copyright (c) 2013--2019 Jane Street Group, LLC                        */
 /*                                                                        */
 /* Permission is hereby granted, free of charge, to any person obtaining  */
 /* a copy of this software and associated documentation files             */
@@ -689,6 +689,22 @@ caml_value monda_get_selected_frame (caml_value v_unit)
 }
 
 extern "C"
+caml_value monda_line_number_of_call_site (caml_value v_call_site)
+{
+  struct call_site* call_site =
+    (struct call_site*) Nativeint_val (v_call_site);
+  return Val_long (call_site->line);
+}
+
+extern "C"
+caml_value monda_column_number_of_call_site (caml_value v_call_site)
+{
+  struct call_site* call_site =
+    (struct call_site*) Nativeint_val (v_call_site);
+  return Val_long (call_site->column);
+}
+
+extern "C"
 caml_value monda_pc_of_call_site (caml_value v_call_site)
 {
   struct call_site* call_site =
@@ -773,13 +789,13 @@ caml_value monda_caller_of_frame (caml_value v_frame)
        identifies an ambiguity. */
     struct call_site_chain* chain =
       call_site_find_chain (prev_arch, return_addr, callee_addr);
-
+/*
     fprintf(stderr, "Chain from RA %p -> callee %p; chain %p; length %d, callers %d\n",
             (void*) return_addr, (void*) callee_addr,
             chain,
             chain == NULL ? -1 : chain->length,
             chain == NULL ? -1 : chain->callers);
-
+*/
     if (chain == NULL  /* there is an ambiguity */
         || chain->length < 0
         || chain->callers < 0

@@ -174,6 +174,10 @@ module type S_base = sig
     (** An address within the call instruction. *)
     val pc : t -> target_addr
 
+    val line_number : t -> int option
+
+    val column_number : t -> int option
+
     (** The OCaml-specific unit info at the call site. *)
     val ocaml_specific_compilation_unit_info
        : t

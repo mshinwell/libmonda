@@ -4,7 +4,7 @@
 (*                                                                        *)
 (*                  Mark Shinwell, Jane Street Europe                     *)
 (*                                                                        *)
-(* Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
+(* Copyright (c) 2013--2019 Jane Street Group, LLC                        *)
 (*                                                                        *)
 (* Permission is hereby granted, free of charge, to any person obtaining  *)
 (* a copy of this software and associated documentation files             *)
@@ -33,25 +33,8 @@ let debug = Monda_debug.debug
 
 let distinguished_var_name = "camlaverydistinguishedvariableindeed"
 
-(* CR mshinwell: bad name, not a "table"; move to [Location] *)
-module LocTable = struct
-  include Map.Make (struct
-    type t = Location.t
-    let compare x y =
-      let lnum x = x.Location.loc_start.Lexing.pos_lnum in
-      (* CR mshinwell: See CR in the .mli *)
-      compare (lnum x) (lnum y)
-  (*
-      let cnum x = x.Location.loc_start.Lexing.pos_cnum in
-      let start = compare (lnum x) (lnum y) in
-      if start = 0 then compare (cnum x) (cnum y) else start
-  *)
-  end)
-
-  let add_or_remove_if_clash t loc datum =
-    if mem loc t then remove loc t
-    else add loc datum t
-end
+(* CR mshinwell: bad name, not a "table" *)
+module LocTable = Numbers.Int.Pair.Map
 
 module List = ListLabels
 
@@ -167,8 +150,16 @@ and process_expression ~(exp : T.expression)
             Some (Core expr.exp_type, expr.exp_env))
         (Array.of_list args)
     in
+(*
+Format.eprintf "app_point at %a\n%!" Location.print_for_debug exp.exp_loc;
+*)
+    (* CR mshinwell: check for clashes *)
     let app_points =
-      LocTable.add_or_remove_if_clash app_points exp.exp_loc arg_tys
+      LocTable.add
+        (exp.exp_loc.loc_start.pos_lnum,
+         exp.exp_loc.loc_start.pos_cnum - exp.exp_loc.loc_start.pos_bol)
+        arg_tys
+        app_points
     in
 (*
     (* CR mshinwell: what happens when [exp] has already been partially
@@ -433,19 +424,29 @@ let type_of_ident t ~name ~stamp =
     None
   end
 
-let type_of_call_site_argument t ~line ~index =
-  let loc =
-    { Location.none with
-      loc_start =
-        { Lexing.dummy_pos with
-          pos_lnum = line;
-        };
-    }
-  in
-  match LocTable.find loc t.application_points with
-  | exception Not_found -> None
+let type_of_call_site_argument t ~line ~column ~index =
+(*
+  if debug then begin
+    Format.eprintf "Finding line %d column %d in:\n" line column;
+    LocTable.iter (fun (line, column) _ ->
+      Format.eprintf "  (line %d, column %d)\n" line column)
+      t.application_points
+  end;
+*)
+  match LocTable.find (line, column) t.application_points with
+  | exception Not_found ->
+    if debug then begin
+      Format.eprintf "Not found\n%!"
+    end;
+    None
   | args ->
-    if index < 0 || index >= Array.length args then None
-    else args.(index)
+    if index < 0 || index >= Array.length args then begin
+      if debug then begin
+        Format.eprintf "Arg %d out of range\n%!" index
+      end;
+      None
+    end else begin
+      args.(index)
+    end
 
 let cmt_infos t = t.cmt_infos

@@ -114,15 +114,15 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                   Printf.fprintf stdout "Couldn't find DWARF arg type.\n"
                 end;
                 begin match
-                  D.filename_and_line_number_of_pc (D.Call_site.pc call_site)
-                    ~use_previous_line_number_if_on_boundary:true
+                  D.Call_site.line_number call_site,
+                    D.Call_site.column_number call_site
                 with
-                | None | Some (_, None) ->
+                | None, None | None, Some _ | Some _, None ->
                   if Monda_debug.debug then begin
                     Printf.fprintf stdout "Couldn't find call site location.\n"
                   end;
                   normal_case ()
-                | Some (_filename, Some line) ->
+                | Some line, Some column ->
                   match
                     D.Call_site.ocaml_specific_compilation_unit_info call_site
                   with
@@ -149,15 +149,22 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                     | Some call_site_cmt ->
                       match
                         Cmt_file.type_of_call_site_argument call_site_cmt ~line
-                          ~index
+                          ~column ~index
                       with
                       | None ->
                         if Monda_debug.debug then begin
-                          Printf.fprintf stdout "type lookup failed (line %d)\n"
-                            line
+                          Printf.fprintf stdout
+                            "type lookup failed (line %d, column %d)\n"
+                            line column
                         end;
                         normal_case ()
-                      | Some (ty, env) -> Some (ty, env, is_parameter)
+                      | Some (ty, env) ->
+                        if Monda_debug.debug then begin
+                          Printf.fprintf stdout
+                            "type lookup ok (line %d, column %d)\n"
+                            line column
+                        end;
+                        Some (ty, env, is_parameter)
                 end
               | Some dwarf_type ->
                 type_and_env_from_dwarf_type ~dwarf_type ~cmt_cache caller_frame
