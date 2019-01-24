@@ -70,6 +70,7 @@ struct
     only_print_short_type : bool;
     only_print_short_value : bool;
     operator_above : operator;
+    visited : V.Set.t;
   }
 
   let descend state ~current_operator =
@@ -139,7 +140,14 @@ struct
     if (state.summary && state.depth > 2)
         || state.depth > state.max_depth then begin
       Format.fprintf formatter "_"
+    end else if V.Set.mem v state.visited then begin
+      Format.fprintf formatter "<circularity>"
     end else begin
+      let state =
+        { state with
+          visited = V.Set.add v state.visited;
+        }
+      in
       match type_info with
       | Obj_immediate -> print_int t ~state v
       | Obj_immediate_but_should_be_boxed ->
@@ -256,7 +264,7 @@ struct
       in
       for field = 0 to size - 1 do
         if field > 0 then begin
-          Format.fprintf formatter ";@ "
+          Format.fprintf formatter "@{<error_colour>;@}@ "
         end;
         match V.field_exn value field with
         | None -> Format.fprintf formatter "%s" optimized_out
@@ -273,7 +281,7 @@ struct
         Format.fprintf formatter " <%d elements follow>"
           (original_size - max_size)
       end;
-      Format.fprintf formatter "]@}";
+      Format.fprintf formatter "@{<error_colour>]@}";
       if need_outer_box then begin
         Format.fprintf formatter "@]"
       end
@@ -692,8 +700,11 @@ struct
           Format.fprintf formatter "%s%s (...)" kind (Ident.name cident)
         end else if List.length args <> V.size_exn v then begin
           Format.fprintf formatter
-            "@[%s%s (@{<error_colour><arg count mismatch>})@]"
+            "@[%s%s (@{<error_colour><arg count mismatch, expected %d, \
+              heap value has %d>@})@]"
             kind (Ident.name cident)
+            (List.length args)
+            (V.size_exn v)
         end else begin
           let printers =
             let args = Array.of_list args in
@@ -1272,6 +1283,7 @@ struct
           only_print_short_type;
           only_print_short_value;
           operator_above = Nothing;
+          visited = V.Set.empty;
         }
         in
         if only_print_short_type then begin

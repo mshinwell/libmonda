@@ -98,8 +98,7 @@ module type S_base = sig
     (** Return the raw value. *)
     val raw : t -> Nativeint.t
 
-    (** Print the raw value as hex. *)
-    val print : Format.formatter -> t -> unit
+    include Identifiable.S with type t := t
   end
 
   module Synthetic_ptr : sig
@@ -120,7 +119,8 @@ module type S_base = sig
     val c_string_field_exn : t -> int -> string
     val float_field_exn : t -> int -> float
     val string : t -> string
-    val print : Format.formatter -> t -> unit
+
+    include Identifiable.S with type t := t
   end
 
   module Target_memory : sig
@@ -342,5 +342,7 @@ module type S = sig
 
     (** Print the raw value as hex. *)
     val print : Format.formatter -> t -> unit
+
+    include Identifiable.S with type t := t
   end
 end

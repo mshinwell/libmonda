@@ -308,8 +308,20 @@ module Obj = struct
 
   let raw t = t
 
-  let print ppf t =
-    Format.fprintf ppf "0x%nx" t
+  include Identifiable.Make (struct
+    type nonrec t = t
+
+    let print ppf t =
+      Format.fprintf ppf "0x%nx" t
+
+    let output _ _ = failwith "Not yet implemented"
+
+    let compare t1 t2 = Stdlib.compare t1 t2
+
+    let equal t1 t2 = (compare t1 t2 = 0)
+
+    let hash t = Hashtbl.hash t
+  end)
 end
 
 module Synthetic_ptr = struct
@@ -393,8 +405,23 @@ module Synthetic_ptr = struct
   let string _t =
     "<unsupported>"
 
-  let print ppf _t =
-    Format.fprintf ppf "<synthetic pointer>"
+  include Identifiable.Make (struct
+    type nonrec t = t
+
+    let print ppf _t =
+      Format.fprintf ppf "<synthetic pointer>"
+
+    let output _ _ = failwith "Not yet implemented"
+
+    (* CR mshinwell: The following are probably dubious, and should be checked
+       with reference to value.c in gdb. *)
+
+    let compare t1 t2 = Stdlib.compare t1 t2
+
+    let equal t1 t2 = (compare t1 t2 = 0)
+
+    let hash t = Hashtbl.hash t
+  end)
 end
 
 let symbol_at_pc pc =

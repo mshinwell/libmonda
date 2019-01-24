@@ -108,9 +108,31 @@ module Make (D : Debugger.S_base) = struct
       | Exists_on_target obj -> Some (Obj.raw obj)
       | Synthetic_ptr _ptr -> None
 
-    let print ppf t =
-      match t with
-      | Exists_on_target obj -> Obj.print ppf obj
-      | Synthetic_ptr ptr -> Synthetic_ptr.print ppf ptr
+    include Identifiable.Make (struct
+      type nonrec t = t
+
+      let print ppf t =
+        match t with
+        | Exists_on_target obj -> Obj.print ppf obj
+        | Synthetic_ptr ptr -> Synthetic_ptr.print ppf ptr
+
+      let output _ _ = failwith "Not yet implemented"
+
+      let compare t1 t2 =
+        match t1, t2 with
+        | Exists_on_target obj1, Exists_on_target obj2 ->
+          Obj.compare obj1 obj2
+        | Synthetic_ptr ptr1, Synthetic_ptr ptr2 ->
+          Synthetic_ptr.compare ptr1 ptr2
+        | Exists_on_target _, Synthetic_ptr _ -> -1
+        | Synthetic_ptr _, Exists_on_target _ -> 1
+
+      let equal t1 t2 = (compare t1 t2 = 0)
+
+      let hash t =
+        match t with
+        | Exists_on_target obj -> Hashtbl.hash (0, Obj.hash obj)
+        | Synthetic_ptr ptr -> Hashtbl.hash (1, Synthetic_ptr.hash ptr)
+    end)
   end
 end
