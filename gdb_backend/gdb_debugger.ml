@@ -504,6 +504,13 @@ let find_and_open ~filename ~dirname =
   | None -> None
   | Some (filename, fd) -> Some (filename, Unix.in_channel_of_descr fd)
 
+module Block = struct
+  type t = nativeint
+
+  external get_selected_block : unit -> t option
+    = "monda_get_selected_block"
+end
+
 module Call_site = struct
   type t = nativeint
 

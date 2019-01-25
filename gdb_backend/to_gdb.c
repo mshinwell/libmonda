@@ -840,3 +840,57 @@ caml_value monda_caller_of_frame (caml_value v_frame)
 
   CAMLreturn (Val_long (0));
 }
+
+extern "C"
+caml_value monda_get_selected_block (caml_value v_unit)
+{
+  CAMLparam1 (v_unit);
+  CAMLlocal1 (v_result);
+
+  CORE_ADDR addr_in_block;
+  const struct block* block;
+
+  TRY {
+    block = get_selected_block (&addr_in_block);
+  }
+  CATCH (except, RETURN_MASK_ERROR) {
+    CAMLreturn (Val_long (0));
+  }
+  END_CATCH
+
+  v_result = caml_alloc (1, 0);
+  Store_field (v_result, 0, caml_copy_nativeint ((intnat) block));
+
+  CAMLreturn (v_result);
+}
+
+/*
+
+- Need to query the current module path so we know where to start for
+.cmt file lookup
+For this one:
+- maybe block_scope might do the trick, but we'd need to do
+block_set_scope when generating blocks for DW_TAG_module (do such blocks
+exist)?  block_set_scope is only done for functions at the moment.
+
+- Look up the module name using block_lookup_symbol.  This should yield the
+OCaml value for the module block.
+
+- Look up the module name with the current module path prepended.  This is
+done by taking the compilation unit from the resulting path, and then going
+down through the .cmt file.  This should give the module definition.
+
+- Recurse.  The next selector will then get the field index from the
+structure definition; we can then dereference through the module block, etc.
+
+Need to use:
+
+extern struct symbol *block_lookup_symbol (const struct block *block,
+                                           const char *name,
+                                           symbol_name_match_type match_type,
+                                           const domain_enum domain);
+
+Then maybe BLOCK_SUPERBLOCK
+
+We probably need a "start at the root" prefix.
+*/
