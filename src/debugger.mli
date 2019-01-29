@@ -168,6 +168,12 @@ module type S_base = sig
     linker_dirs : string list;
   }
 
+  module Block : sig
+    type t
+
+    val get_selected_block : unit -> t option
+  end
+
   module Call_site : sig
     type t
 

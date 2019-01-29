@@ -850,6 +850,53 @@ caml_value monda_caller_of_frame (caml_value v_frame)
 }
 
 extern "C"
+caml_value monda_get_selected_block (caml_value v_unit)
+{
+  CAMLparam1 (v_unit);
+  CAMLlocal1 (v_result);
+
+  CORE_ADDR addr_in_block;
+  const struct block* block;
+
+  TRY {
+    block = get_selected_block (&addr_in_block);
+  }
+  CATCH (except, RETURN_MASK_ERROR) {
+    CAMLreturn (Val_long (0));
+  }
+  END_CATCH
+
+  v_result = caml_alloc (1, 0);
+  Store_field (v_result, 0, caml_copy_nativeint ((intnat) block));
+
+  CAMLreturn (v_result);
+}
+
+/*
+- Look up the module name using block_lookup_symbol.  This should yield the
+OCaml value for the module block.  This will then, via its DWARF type, give
+the compilation unit and the ident name.
+
+- Look up the module name with the current module path prepended.  This is
+done by taking the compilation unit from the resulting path, and then going
+down through the .cmt file.  This should give the module definition.
+
+- Recurse.  The next selector will then get the field index from the
+structure definition; we can then dereference through the module block, etc.
+
+Need to use:
+
+extern struct symbol *block_lookup_symbol (const struct block *block,
+                                           const char *name,
+                                           symbol_name_match_type match_type,
+                                           const domain_enum domain);
+
+Then maybe BLOCK_SUPERBLOCK
+
+We probably need a "start at the root" prefix.
+*/
+
+extern "C"
 caml_value monda_write_nativeint_into_field (caml_value v_nativeint,
                                              caml_value v_block,
                                              caml_value v_field)
