@@ -203,6 +203,8 @@ module type S_base = sig
 
     val none : t
 
+    val inlined : t -> bool
+
     val get_selected_frame : unit -> t
 
     type caller_result = private
@@ -266,6 +268,17 @@ module type S_base = sig
     -> summary:bool
     -> (Format.formatter -> 'a)
     -> 'a
+
+  (* CR mshinwell: This should really be in a C stub in src/. *)
+  (** Write the contents of the given native integer into the given field
+      of the given OCaml heap block.  This is for use when e.g. copying
+      values with tag at least as large as [No_scan_tag].  It does not call
+      [caml_modify]!  There is also no bounds checking. *)
+  val write_nativeint_into_field
+     : Nativeint.t
+    -> Stdlib.Obj.t
+    -> field:int
+    -> unit
 end
 
 module type S = sig

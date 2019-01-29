@@ -78,7 +78,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | Core ty ->
         let ty = Ctype.expand_head env ty in
         let normal_case () = Some (Cmt_file.Core ty, env, is_parameter) in
-        if type_is_polymorphic env ty then begin
+        if type_is_polymorphic env ty && not (D.Frame.inlined frame) then begin
           if Monda_debug.debug then begin
             Printf.fprintf stdout "Type is polymorphic.\n"
           end;

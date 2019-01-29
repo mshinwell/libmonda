@@ -550,6 +550,9 @@ module Frame = struct
 
   let none = 0n
 
+  external inlined : t -> bool
+    = "monda_frame_inlined"
+
   external get_selected_frame : unit -> t
     = "monda_get_selected_frame"
 
@@ -688,3 +691,13 @@ let with_formatter_margins ppf ~summary f =
   - GC-safe watchpoints
   - resurrect old code for compile+run
 *)
+
+external write_nativeint_into_field
+   : Nativeint.t
+  -> Stdlib.Obj.t
+  -> int
+  -> unit
+  = "monda_write_nativeint_into_field"
+
+let write_nativeint_into_field n block ~field =
+  write_nativeint_into_field n block field

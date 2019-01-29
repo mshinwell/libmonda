@@ -141,6 +141,7 @@ struct
         || state.depth > state.max_depth then begin
       Format.fprintf formatter "_"
     end else if V.Set.mem v state.visited then begin
+      (* CR mshinwell: This is happening for normal sharing too *)
       Format.fprintf formatter "<circularity>"
     end else begin
       let state =
@@ -322,8 +323,8 @@ struct
       if spaces_inside_delimiters then begin
         Format.fprintf formatter "@ "
       end;
-      if break_after_opening_delimiter then begin
-          Format.fprintf formatter "@,"
+      if break_after_opening_delimiter && size > 0 then begin
+        Format.fprintf formatter "@,"
       end
     end;
     for field = 0 to size - 1 do
@@ -344,7 +345,7 @@ struct
         (original_size - max_size)
     end;
     if not elide_delimiters then begin
-      if spaces_inside_delimiters && size > 0 then begin
+      if spaces_inside_delimiters && size > 1 then begin
         Format.fprintf formatter "@ "
       end;
       Format.fprintf formatter "%s" closing_delimiter
@@ -753,6 +754,9 @@ struct
     end
 
   and print_format6 _t ~state v =
+    if debug then begin
+      Printf.printf "print_format6\n"
+    end;
     let formatter = state.formatter in
     let format_string : _ format6 = Our_value_copier.copy v in
     Format.fprintf formatter "%S" (string_of_format format_string)
@@ -827,6 +831,7 @@ struct
       *)
       let rec print v =
         if not !first then begin
+          (* CR mshinwell: This prints extraneous commas *)
           Format.fprintf formatter ",@ "
         end;
         if V.is_int v then begin

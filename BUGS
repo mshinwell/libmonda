@@ -1,0 +1,6 @@
+- Breakpoints don't set on inlined instances until <something happens>
+
+- Pressing Ctrl+C sometimes causes target memory read functions to return
+with an exception, but we then read garbage and fail, or similar.
+
+

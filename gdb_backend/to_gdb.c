@@ -683,6 +683,14 @@ caml_value monda_set_wrap_column (caml_value v_col)
 }
 
 extern "C"
+caml_value monda_frame_inlined (caml_value v_frame)
+{
+  struct frame_info *frame =
+    (struct frame_info *) Nativeint_val (v_frame);
+  return get_frame_type (frame) == INLINE_FRAME ? Val_true : Val_false;
+}
+
+extern "C"
 caml_value monda_get_selected_frame (caml_value v_unit)
 {
   struct frame_info *frame = get_selected_frame_if_set ();
@@ -839,4 +847,18 @@ caml_value monda_caller_of_frame (caml_value v_frame)
   END_CATCH
 
   CAMLreturn (Val_long (0));
+}
+
+extern "C"
+caml_value monda_write_nativeint_into_field (caml_value v_nativeint,
+                                             caml_value v_block,
+                                             caml_value v_field)
+{
+  intnat n = Nativeint_val (v_nativeint);
+  mlsize_t field = Long_val (v_field);
+  intnat* block = (intnat*) v_block;
+
+  block[field] = n;
+
+  return Val_unit;
 }
