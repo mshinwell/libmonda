@@ -689,6 +689,9 @@ caml_value monda_frame_inlined (caml_value v_frame)
 {
   struct frame_info *frame =
     (struct frame_info *) Nativeint_val (v_frame);
+  if (frame == NULL) {
+    return Val_false;
+  }
   return get_frame_type (frame) == INLINE_FRAME ? Val_true : Val_false;
 }
 
@@ -953,8 +956,25 @@ caml_value monda_get_selected_block (caml_value v_unit)
 }
 
 extern "C"
-caml_value monda_block_lookup_symbol (caml_value v_block,
-                                      caml_value v_symbol_name)
+caml_value monda_block_parent (caml_value v_block)
+{
+  CAMLparam1 (v_block);
+  CAMLlocal1 (v_result);
+
+  const struct block* block = (const struct block*) Nativeint_val (v_block);
+  const struct block* parent = BLOCK_SUPERBLOCK (block);
+  if (!parent) {
+    CAMLreturn (Val_long (0));
+  }
+
+  v_result = caml_alloc (1, 0);
+  Store_field (v_result, 0, caml_copy_nativeint ((intnat) parent));
+  CAMLreturn (v_result);
+}
+
+static caml_value monda_block_lookup_symbol0 (caml_value v_block,
+                                              caml_value v_symbol_name,
+                                              const domain_enum domain)
 {
   CAMLparam2 (v_block, v_symbol_name);
   CAMLlocal1 (v_result);
@@ -965,8 +985,8 @@ caml_value monda_block_lookup_symbol (caml_value v_block,
   struct symbol* symbol;
   TRY {
     symbol = block_lookup_symbol (block, symbol_name,
-                                  symbol_name_match_type::WILD,
-                                  VAR_DOMAIN);
+                                  symbol_name_match_type::FULL,
+                                  domain);
 
     if (symbol == NULL) {
       CAMLreturn (Val_long (0));
@@ -983,29 +1003,19 @@ caml_value monda_block_lookup_symbol (caml_value v_block,
   CAMLreturn (v_result);
 }
 
-/*
-- Look up the module name using block_lookup_symbol.  This should yield the
-OCaml value for the module block.  This will then, via its DWARF type, give
-the compilation unit and the ident name.
-
-- Look up the module name with the current module path prepended.  This is
-done by taking the compilation unit from the resulting path, and then going
-down through the .cmt file.  This should give the module definition.
-
-- Recurse.  The next selector will then get the field index from the
-structure definition; we can then dereference through the module block, etc.
-
-Need to use:
-
-extern struct symbol *block_lookup_symbol (const struct block *block,
-                                           const char *name,
-                                           symbol_name_match_type match_type,
-                                           const domain_enum domain);
-
-Then maybe BLOCK_SUPERBLOCK
-
-We probably need a "start at the root" prefix.
-*/
+extern "C"
+caml_value monda_block_lookup_symbol (caml_value v_block,
+                                      caml_value v_symbol_name)
+{
+  caml_value result;
+  printf("Checking VAR_DOMAIN\n");
+  result = monda_block_lookup_symbol0 (v_block, v_symbol_name, VAR_DOMAIN);
+  if (Is_block (result)) {
+    return result;
+  }
+  printf("Checking MODULE_DOMAIN\n");
+  return monda_block_lookup_symbol0 (v_block, v_symbol_name, MODULE_DOMAIN);
+}
 
 extern "C"
 caml_value monda_write_nativeint_into_field (caml_value v_nativeint,

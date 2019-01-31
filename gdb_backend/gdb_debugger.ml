@@ -4,7 +4,7 @@
 (*                                                                         *)
 (*                   Mark Shinwell, Jane Street Europe                     *)
 (*                                                                         *)
-(*  Copyright (c) 2013--2018 Jane Street Group, LLC                        *)
+(*  Copyright (c) 2013--2019 Jane Street Group, LLC                        *)
 (*                                                                         *)
 (*  Permission is hereby granted, free of charge, to any person obtaining  *)
 (*  a copy of this software and associated documentation files             *)
@@ -603,6 +603,9 @@ module Block = struct
 
   external lookup_symbol : t -> string -> Symbol.t option
     = "monda_block_lookup_symbol"
+
+  external parent : t -> t option
+    = "monda_block_parent"
 end
 
 let filename_and_line_number_of_pc addr

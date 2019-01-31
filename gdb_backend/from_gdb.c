@@ -39,6 +39,7 @@
 #include "value.h"
 #include "valprint.h"
 #include "c-lang.h"
+#include "utils.h"
 
 #include <assert.h>
 #include <string.h>
@@ -275,10 +276,7 @@ printf("monda_evaluate '%s'\n", expr);fflush(stdout);
 
   v_expr = caml_copy_string(expr);
 
-  /* CR mshinwell: We should adjust this code to call back into gdb to
-     write to [gdb_stderr].  It isn't clear how to propagate the fd into
-     here. */
-  v_stream = caml_copy_int64((uint64_t) 2);
+  v_stream = caml_copy_int64((uint64_t) gdb_stderr);
 
   v_search_path = caml_copy_string("");  /* CR mshinwell: remove */
 

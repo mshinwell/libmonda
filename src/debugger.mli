@@ -241,6 +241,8 @@ module type S_base = sig
     val get_selected_block : unit -> t option
 
     val lookup_symbol : t -> string -> Symbol.t option
+
+    val parent : t -> t option
   end
 
   (** Extract values for the given compilation unit that are transmitted via

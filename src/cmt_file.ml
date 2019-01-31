@@ -326,6 +326,7 @@ let create_idents_to_types_map ~(cmt_infos : Cmt_format.cmt_infos) =
   | Partial_implementation _
   | Partial_interface _ -> String.Map.empty, LocTable.empty
   | Implementation structure ->
+(* We can't do this -- it prevents us finding module types in Follow_path
     let idents_to_types =
       (* CR mshinwell: This is a hack and could be improved.  Do we need
          to read the .cmti to get the module's signature? *)
@@ -333,6 +334,12 @@ let create_idents_to_types_map ~(cmt_infos : Cmt_format.cmt_infos) =
         (Module (Mty_ident (Pident (
            Ident.create_persistent "<compilation unit>"))),
          cmt_infos.cmt_initial_env)
+        String.Map.empty
+    in *)
+    let idents_to_types =
+      String.Map.add (Printf.sprintf "%s_0" cmt_infos.cmt_modname)
+        (Module (Mty_signature structure.str_type),
+         structure.str_final_env)
         String.Map.empty
     in
     process_implementation ~structure ~idents_to_types

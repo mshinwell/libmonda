@@ -29,6 +29,8 @@
 
 [@@@ocaml.warning "+a-4-9-30-40-41-42"]
 
+let debug = Monda_debug.debug
+
 module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
   module Our_type_oracle = Type_oracle.Make (D) (Cmt_cache)
   module Type_helper = Type_helper.Make (D) (Cmt_cache)
@@ -140,18 +142,101 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         | Module _ ->
           begin match what_was_above with
           | Core_value ->
-            Format.fprintf formatter "@{<error_colour>Cannot project a \
-              module out of a core (non-module) value@}";
+            Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
+              project a module out of a core (non-module) value\n%!";
             None
           | Module ->
+            (* Projecting modules from modules is going to be similar to
+               the values from modules case below. *)
             None
           end
         | Project_name { field_name; next; } ->
           begin match what_was_above with
           | Module ->
-            Format.fprintf formatter "@{<error_colour>Cannot yet project by \
-              name out of a module@}";
-            None
+            begin match ty with
+            | Core _ ->
+              (* CR mshinwell: Improve error messages *)
+              Format.fprintf formatter "@{<error_colour>Error: @}Expected \
+                  module type for projecting @{<variable_name_colour>%s@}, \
+                  but have core type\n%!"
+                field_name;
+              None
+            | Module mod_ty ->
+              let cannot_handle what =
+                Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
+                    project @{<variable_name_colour>%s@} from a module \
+                    (unsupported %s case)\n%!"
+                  field_name
+                  what;
+                None
+              in
+              (* XXX This should have loaded the .cmi based on the unit name *)
+              match mod_ty with
+              | Mty_ident path ->
+                cannot_handle (
+                  Printf.sprintf "Mty_ident (%s)" (Path.name path));
+              | Mty_signature sig_items ->
+                let _pos, found_val_desc =
+                  List.fold_left
+                    (fun (pos, found_val_desc) (item : Types.signature_item) ->
+                      match found_val_desc with
+                      | Some _ -> pos, found_val_desc
+                      | None ->
+                        match item with
+                        | Sig_value (ident, val_desc) ->
+                          if String.equal field_name (Ident.name ident) then
+                            pos (* doesn't matter *), Some (pos, val_desc)
+                          else
+                            let pos =
+                              match val_desc.val_kind with
+                              | Val_prim _ -> pos
+                              | _ -> pos + 1
+                            in
+                            pos, None
+                        | Sig_typext _
+                        | Sig_module _
+                        | Sig_class _ -> pos + 1, None
+                        | Sig_type _
+                        | Sig_modtype _
+                        | Sig_class_type _ -> pos, None)
+                    (0, None)
+                    sig_items
+                in
+                begin match found_val_desc with
+                | None ->
+                  Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
+                      project non-existent field @{<variable_name_colour>%s@} \
+                      from module\n%!"
+                    field_name;
+                  None
+                | Some (pos, val_desc) ->
+                  if not (D.Obj.is_block v)
+                    || D.Obj.tag_exn v <> 0
+                    || D.Obj.size_exn v <= pos
+                  then begin
+                    Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
+                        project field @{<variable_name_colour>%s@} \
+                        from module: block %a is malformed\n%!"
+                      field_name
+                      D.Obj.print v;
+                    None
+                  end else begin
+                    let ty : Cmt_file.core_or_module_type =
+                      Core val_desc.val_type
+                    in
+                    let address_of_v = Some (D.Obj.address_of_field v pos) in
+                    let v = D.Obj.field_exn v pos in
+                    (* CR mshinwell: Is this the correct [env]? *)
+                    find_component ~path:next ~ty ~env
+                      ~previous_was_mutable:false
+                      ~address_of_v
+                      ~what_was_above:Module
+                      v
+                  end
+                end
+              | Mty_functor _ -> cannot_handle "Mty_functor"
+              | Mty_alias _ -> cannot_handle "Mty_alias"
+            end
           | Core_value ->
             begin match oracle_result with
             | Record (_path, params, args, fields, _record_repr, env) ->
@@ -194,8 +279,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         | Project_index { index; next; } ->
           begin match what_was_above with
           | Module ->
-            Format.fprintf formatter "@{<error_colour>Cannot project by \
-              index out of a module@}";
+            Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
+              project by index out of a module\n%!";
             None
           | Core_value ->
             let tuple_like ~element_types ~env =
@@ -298,6 +383,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     let (>>=) opt f = match opt with None -> None | Some v -> f v in
     parse ~path
     >>= fun path ->
+    if debug then Printf.printf "parsed ok\n%!";
     let name =
       match path with
       | Module { name; _ }
@@ -308,27 +394,50 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
       | Module _ -> Module
       | Variable _ -> Core_value
     in
+    if debug then Printf.printf "calling Block.get_selected_block\n%!";
     D.Block.get_selected_block ()
     >>= fun block ->
-    D.Block.lookup_symbol block name
-    >>= fun symbol ->
-    D.Symbol.dwarf_type symbol
-    >>= fun dwarf_type ->
-    let frame = D.Frame.get_selected_frame () in
-    let type_and_env =
-      Type_helper.type_and_env_from_dwarf_type ~dwarf_type
-        ~cmt_cache:t.cmt_cache frame
+    let rec lookup_symbol block name =
+      if debug then Printf.printf "calling lookup_symbol `%s'\n%!" name;
+      match D.Block.lookup_symbol block name with
+      | Some symbol -> Some symbol
+      | None ->
+        match D.Block.parent block with
+        | None -> None
+        | Some block ->
+          if debug then Printf.printf "moving to parent block\n%!";
+          lookup_symbol block name
     in
-    let path =
-      match path with
-      | Module { next; _ }
-      | Variable { next; _ } -> next
-    in
-    match D.Symbol.value symbol (Some frame) block with
-    | No_value -> None
-    | Synthetic_ptr _ -> None  (* See CR above, we should handle this *)
-    | Exists_on_target starting_point ->
-      evaluate_given_starting_point t ~path
-        type_and_env ~lvalue_or_rvalue ~must_be_mutable
-        ~formatter ~what_was_above starting_point
+    match lookup_symbol block name with
+    | None ->
+      Format.fprintf formatter "@{<error_colour>Error:@} Cannot find %s \
+          @{<variable_name_colour>%s@} \
+          in the current block\n%!"
+        (match what_was_above with
+          | Module -> "module"
+          | Core_value -> "variable")
+        name;
+      None
+    | Some symbol ->
+      if debug then Printf.printf "calling dwarf_type\n%!";
+      D.Symbol.dwarf_type symbol
+      >>= fun dwarf_type ->
+      let frame = D.Frame.get_selected_frame () in
+      let type_and_env =
+        Type_helper.type_and_env_from_dwarf_type ~dwarf_type
+          ~cmt_cache:t.cmt_cache frame
+      in
+      let path =
+        match path with
+        | Module { next; _ }
+        | Variable { next; _ } -> next
+      in
+      if debug then Printf.printf "calling Symbol.value\n%!";
+      match D.Symbol.value symbol (Some frame) block with
+      | No_value -> None
+      | Synthetic_ptr _ -> None  (* See CR above, we should handle this *)
+      | Exists_on_target starting_point ->
+        evaluate_given_starting_point t ~path
+          type_and_env ~lvalue_or_rvalue ~must_be_mutable
+          ~formatter ~what_was_above starting_point
 end
