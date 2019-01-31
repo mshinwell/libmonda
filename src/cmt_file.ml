@@ -326,6 +326,7 @@ let create_idents_to_types_map ~(cmt_infos : Cmt_format.cmt_infos) =
   | Partial_implementation _
   | Partial_interface _ -> String.Map.empty, LocTable.empty
   | Implementation structure ->
+(*
 (* We can't do this -- it prevents us finding module types in Follow_path
     let idents_to_types =
       (* CR mshinwell: This is a hack and could be improved.  Do we need
@@ -342,7 +343,8 @@ let create_idents_to_types_map ~(cmt_infos : Cmt_format.cmt_infos) =
          structure.str_final_env)
         String.Map.empty
     in
-    process_implementation ~structure ~idents_to_types
+*)
+    process_implementation ~structure ~idents_to_types:String.Map.empty
       ~app_points:LocTable.empty
 
 let load_path_from_cmt_infos (cmt_infos : Cmt_format.cmt_infos) =
@@ -457,3 +459,51 @@ let type_of_call_site_argument t ~line ~column ~index =
     end
 
 let cmt_infos t = t.cmt_infos
+
+let rec traverse_module_declaration (module_decl : Types.module_declaration)
+      ~idents_to_types =
+  match module_decl.md_type with
+  | Mty_signature sig_items -> traverse_signature sig_items ~idents_to_types
+  | Mty_ident _
+  | Mty_functor _
+  | Mty_alias _ -> idents_to_types
+
+and traverse_signature_item (sig_item : Types.signature_item) ~idents_to_types =
+  match sig_item with
+  | Sig_value (id, val_desc) ->
+    String.Map.add (Ident.unique_name id)
+      (Core val_desc.val_type, Env.empty)
+      idents_to_types
+  | Sig_module (id, module_decl, _rec_status) ->
+    let idents_to_types =
+      String.Map.add (Ident.unique_name id)
+        (Module module_decl.md_type, Env.empty)
+        idents_to_types
+    in
+    traverse_module_declaration module_decl ~idents_to_types
+  | Sig_type _
+  | Sig_typext _
+  | Sig_modtype _
+  | Sig_class _
+  | Sig_class_type _ -> idents_to_types
+
+and traverse_signature sig_items ~idents_to_types =
+  List.fold_left sig_items ~init:idents_to_types
+    ~f:(fun idents_to_types sig_item ->
+      traverse_signature_item sig_item ~idents_to_types)
+
+let add_information_from_cmi_file t ~unit_name =
+  match (!Env.Persistent_signature.load) ~unit_name with
+  | None -> t
+  | Some { cmi; _ } ->
+    let sig_items = cmi.cmi_sign in
+    let idents_to_types =
+      String.Map.add (Printf.sprintf "%s_0" unit_name)
+        (Module (Mty_signature sig_items),
+         Env.empty) (* CR mshinwell: what env should go here, if any? *)
+        t.idents_to_types
+    in
+    let idents_to_types = traverse_signature sig_items ~idents_to_types in
+    { t with
+      idents_to_types;
+    }

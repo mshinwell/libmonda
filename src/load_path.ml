@@ -117,6 +117,12 @@ module Make (D : Debugger.S) = struct
           Printf.eprintf ".cmt file %s found by debugger and opened\n%!"
             filename;
         end;
-        Cmt_file.load_from_channel_then_close ~filename cmt_chan
-          ~add_to_load_path
+        match
+          Cmt_file.load_from_channel_then_close ~filename cmt_chan
+            ~add_to_load_path
+        with
+        | None -> None
+        | Some cmt_file ->
+          let unit_name = Ident.name unit_name in
+          Some (Cmt_file.add_information_from_cmi_file cmt_file ~unit_name)
 end

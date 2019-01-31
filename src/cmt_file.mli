@@ -41,6 +41,8 @@ val load_from_channel_then_close
   -> add_to_load_path:(string list -> unit)
   -> t option
 
+val add_information_from_cmi_file : t -> unit_name:string -> t
+
 type core_or_module_type =
   | Core of Types.type_expr
   | Module of Types.module_type
