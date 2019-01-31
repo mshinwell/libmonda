@@ -1008,12 +1008,12 @@ caml_value monda_block_lookup_symbol (caml_value v_block,
                                       caml_value v_symbol_name)
 {
   caml_value result;
-  printf("Checking VAR_DOMAIN\n");
+
   result = monda_block_lookup_symbol0 (v_block, v_symbol_name, VAR_DOMAIN);
   if (Is_block (result)) {
     return result;
   }
-  printf("Checking MODULE_DOMAIN\n");
+
   return monda_block_lookup_symbol0 (v_block, v_symbol_name, MODULE_DOMAIN);
 }
 

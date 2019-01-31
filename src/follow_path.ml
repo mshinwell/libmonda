@@ -170,7 +170,6 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                   what;
                 None
               in
-              (* XXX This should have loaded the .cmi based on the unit name *)
               match mod_ty with
               | Mty_ident path ->
                 cannot_handle (
@@ -194,7 +193,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                             in
                             pos, None
                         | Sig_typext _
-                        | Sig_module _
+                        | Sig_module _ (* XXX need to calculate its length *)
                         | Sig_class _ -> pos + 1, None
                         | Sig_type _
                         | Sig_modtype _
