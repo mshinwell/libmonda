@@ -458,7 +458,7 @@ struct
       | _ -> true
     in
     if need_outer_box then begin
-      Format.fprintf formatter "@[<hov 2>"
+      Format.fprintf formatter "@[<hov 1>"
     end;
     Format.fprintf formatter "[";
     aux v ~element_index:0;
@@ -722,7 +722,7 @@ struct
           in
           let print_prefix ppf () =
             let name = Ident.name cident in
-            Format.fprintf ppf "@{<function_name_colour>%s%s@} " kind name
+            Format.fprintf ppf "@{<function_name_colour>%s%s@}@ " kind name
           in
           print_multiple_with_type_info ~print_prefix t ~state ~printers
             ~current_operator
@@ -883,8 +883,10 @@ struct
       Format.fprintf formatter "(empty map)"
     end else begin
       Format.fprintf formatter
-        "@[<hv 0>@{<function_name_colour>Stdlib.Map@} { ";
+        "@[<hv 0>@[<hv 2>@{<function_name_colour>Stdlib.Map@} {@ ";
+(*
       Format.fprintf formatter "@[<hv 0>";
+*)
 (*
       Format.pp_open_tbox formatter ();
       Format.pp_set_tab formatter ();
@@ -1009,7 +1011,7 @@ struct
       rule_off ();
       Format.pp_close_tbox formatter ()
 *)
-      Format.fprintf formatter "@]@;}@]";
+      Format.fprintf formatter "@]@;@]}";
     end
 
   and print_stdlib_hashtbl t state ~key_env ~key_ty ~datum_env ~datum_ty v =
