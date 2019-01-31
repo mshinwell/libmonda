@@ -331,6 +331,8 @@ module Synthetic_ptr = struct
 
   type t = nativeint
 
+  let none = 0n
+
   external value_bits_synthetic_pointer
      : (t [@unboxed])
     -> offset_in_bits:(int [@untagged])
@@ -504,13 +506,6 @@ let find_and_open ~filename ~dirname =
   | None -> None
   | Some (filename, fd) -> Some (filename, Unix.in_channel_of_descr fd)
 
-module Block = struct
-  type t = nativeint
-
-  external get_selected_block : unit -> t option
-    = "monda_get_selected_block"
-end
-
 module Call_site = struct
   type t = nativeint
 
@@ -575,6 +570,39 @@ module Frame = struct
      : t
     -> caller_result
     = "monda_caller_of_frame"
+end
+
+type symbol = nativeint
+type block = nativeint
+
+module Symbol = struct
+  type t = symbol
+
+  external dwarf_type : t -> string option
+    = "monda_symbol_dwarf_type"
+
+  type sym_value =
+    | No_value
+    | Exists_on_target of Obj.t
+    | Synthetic_ptr of Synthetic_ptr.t
+
+  (* Silence erroneous warning 37. *)
+  let (_ : sym_value) = No_value
+  let (_ : sym_value) = Exists_on_target Obj.unit
+  let (_ : sym_value) = Synthetic_ptr Synthetic_ptr.none
+
+  external value : t -> Frame.t option -> block -> sym_value
+    = "monda_symbol_value"
+end
+
+module Block = struct
+  type t = block
+
+  external get_selected_block : unit -> t option
+    = "monda_get_selected_block"
+
+  external lookup_symbol : t -> string -> Symbol.t option
+    = "monda_block_lookup_symbol"
 end
 
 let filename_and_line_number_of_pc addr

@@ -349,6 +349,7 @@ find_named_value_callback(const char* name, struct symbol* sym,
   }
 }
 
+/* CR mshinwell: Can probably remove this */
 extern "C" caml_value
 monda_find_named_value(caml_value v_name)
 {
@@ -418,6 +419,7 @@ monda_find_named_value(caml_value v_name)
   CAMLreturn(v_option);
 }
 
+/* CR mshinwell: Remove this old and broken function */
 extern "C" caml_value
 monda_find_global_symbol(caml_value v_name)
 {
@@ -850,6 +852,84 @@ caml_value monda_caller_of_frame (caml_value v_frame)
 }
 
 extern "C"
+caml_value monda_symbol_dwarf_type (caml_value v_symbol)
+{
+  CAMLparam1 (v_symbol);
+  CAMLlocal1 (v_result);
+
+  struct symbol* symbol = (struct symbol*) Nativeint_val (v_symbol);
+  struct type* type = SYMBOL_TYPE (symbol);
+
+  if (type == NULL) {
+    CAMLreturn (Val_long (0));
+  }
+
+  if (TYPE_NAME (type) == NULL) {
+    CAMLreturn (Val_long (0));
+  }
+
+  v_result = caml_alloc (1, 0);
+  Store_field (v_result, 0, caml_copy_string (TYPE_NAME (type)));
+
+  CAMLreturn (v_result);
+}
+
+extern "C"
+caml_value monda_symbol_value (caml_value v_symbol, caml_value v_frame,
+                               caml_value v_block)
+{
+  CAMLparam3 (v_symbol, v_frame, v_block);
+  CAMLlocal1 (v_result);
+
+  struct symbol* symbol = (struct symbol*) Nativeint_val (v_symbol);
+  struct frame_info* frame = NULL;
+
+  if (Is_block (v_frame)) {
+    frame = (struct frame_info*) Nativeint_val (v_frame);
+  }
+
+  struct block* block = (struct block*) Nativeint_val (v_block);
+
+  TRY {
+    struct value* value = read_var_value (symbol, block, frame);
+    if (value == NULL) {
+      CAMLreturn (Val_long (0));
+    }
+
+    if (!value_entirely_available (value)) {
+      CAMLreturn (Val_long (0));
+    }
+
+    struct type* type = value_type (value);
+    if (type == NULL) {
+      CAMLreturn (Val_long (0));
+    }
+
+    if (TYPE_LENGTH (type) != sizeof (intnat)) {
+      CAMLreturn (Val_long (0));
+    }
+
+    if (value_bits_synthetic_pointer (value, 0, TYPE_LENGTH (type) * 8)) {
+      v_result = caml_alloc (1, 1);
+      Store_field (v_result, 0, caml_copy_nativeint ((intnat) value));
+      CAMLreturn (v_result);
+    }
+
+    const gdb_byte* contents = value_contents (value);
+
+    v_result = caml_alloc (1, 0);
+    Store_field (v_result, 0, caml_copy_nativeint (*(intnat*) contents));
+    CAMLreturn (v_result);
+  }
+  CATCH (except, RETURN_MASK_ERROR) {
+    CAMLreturn (Val_long (0));
+  }
+  END_CATCH
+
+  CAMLreturn (Val_long (0));
+}
+
+extern "C"
 caml_value monda_get_selected_block (caml_value v_unit)
 {
   CAMLparam1 (v_unit);
@@ -868,6 +948,37 @@ caml_value monda_get_selected_block (caml_value v_unit)
 
   v_result = caml_alloc (1, 0);
   Store_field (v_result, 0, caml_copy_nativeint ((intnat) block));
+
+  CAMLreturn (v_result);
+}
+
+extern "C"
+caml_value monda_block_lookup_symbol (caml_value v_block,
+                                      caml_value v_symbol_name)
+{
+  CAMLparam2 (v_block, v_symbol_name);
+  CAMLlocal1 (v_result);
+
+  const struct block* block = (const struct block*) Nativeint_val (v_block);
+  char* symbol_name = String_val (v_symbol_name);
+
+  struct symbol* symbol;
+  TRY {
+    symbol = block_lookup_symbol (block, symbol_name,
+                                  symbol_name_match_type::WILD,
+                                  VAR_DOMAIN);
+
+    if (symbol == NULL) {
+      CAMLreturn (Val_long (0));
+    }
+  }
+  CATCH (except, RETURN_MASK_ERROR) {
+    CAMLreturn (Val_long (0));
+  }
+  END_CATCH
+
+  v_result = caml_alloc (1, 0);
+  Store_field (v_result, 0, caml_copy_nativeint ((intnat) symbol));
 
   CAMLreturn (v_result);
 }

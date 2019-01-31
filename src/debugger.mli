@@ -168,12 +168,6 @@ module type S_base = sig
     linker_dirs : string list;
   }
 
-  module Block : sig
-    type t
-
-    val get_selected_block : unit -> t option
-  end
-
   module Call_site : sig
     type t
 
@@ -211,6 +205,7 @@ module type S_base = sig
 
     val inlined : t -> bool
 
+    (* CR mshinwell: shouldn't this return an option? *)
     val get_selected_frame : unit -> t
 
     type caller_result = private
@@ -222,6 +217,30 @@ module type S_base = sig
         may not always be known, for example in some tail call scenarios; in
         these cases, [None] is returned. *)
     val caller : t -> caller_result
+  end
+
+  type symbol
+  type block
+
+  module Symbol : sig
+    type t = symbol
+
+    val dwarf_type : t -> string option
+
+    type sym_value = private
+      | No_value
+      | Exists_on_target of Obj.t
+      | Synthetic_ptr of Synthetic_ptr.t
+
+    val value : t -> Frame.t option -> block -> sym_value
+  end
+
+  module Block : sig
+    type t = block
+
+    val get_selected_block : unit -> t option
+
+    val lookup_symbol : t -> string -> Symbol.t option
   end
 
   (** Extract values for the given compilation unit that are transmitted via
