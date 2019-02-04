@@ -227,12 +227,16 @@ module type S_base = sig
 
     val dwarf_type : t -> string option
 
+(*
     type sym_value = private
       | No_value
       | Exists_on_target of Obj.t
       | Synthetic_ptr of Synthetic_ptr.t
 
     val value : t -> Frame.t option -> block -> sym_value
+*)
+
+    val address : t -> Obj.t option
   end
 
   module Block : sig

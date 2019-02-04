@@ -877,6 +877,7 @@ caml_value monda_symbol_dwarf_type (caml_value v_symbol)
   CAMLreturn (v_result);
 }
 
+/*
 extern "C"
 caml_value monda_symbol_value (caml_value v_symbol, caml_value v_frame,
                                caml_value v_block)
@@ -928,6 +929,30 @@ caml_value monda_symbol_value (caml_value v_symbol, caml_value v_frame,
     CAMLreturn (Val_long (0));
   }
   END_CATCH
+
+  CAMLreturn (Val_long (0));
+}
+*/
+
+extern "C"
+caml_value monda_symbol_address (caml_value v_symbol)
+{
+  CAMLparam1 (v_symbol);
+  CAMLlocal1 (v_result);
+
+  struct symbol* symbol = (struct symbol*) Nativeint_val (v_symbol);
+
+  switch (SYMBOL_CLASS (symbol)) {
+    case LOC_STATIC: {
+      CORE_ADDR addr = SYMBOL_VALUE_ADDRESS (symbol);
+      v_result = caml_alloc (1, 0);
+      Store_field (v_result, 0, caml_copy_nativeint ((intnat) addr));
+      CAMLreturn (v_result);
+    }
+
+    default:
+      break;
+  }
 
   CAMLreturn (Val_long (0));
 }

@@ -331,8 +331,6 @@ module Synthetic_ptr = struct
 
   type t = nativeint
 
-  let none = 0n
-
   external value_bits_synthetic_pointer
      : (t [@unboxed])
     -> offset_in_bits:(int [@untagged])
@@ -581,6 +579,10 @@ module Symbol = struct
   external dwarf_type : t -> string option
     = "monda_symbol_dwarf_type"
 
+  external address : t -> Obj.t option
+    = "monda_symbol_address"
+
+(*
   type sym_value =
     | No_value
     | Exists_on_target of Obj.t
@@ -593,6 +595,7 @@ module Symbol = struct
 
   external value : t -> Frame.t option -> block -> sym_value
     = "monda_symbol_value"
+*)
 end
 
 module Block = struct
@@ -601,6 +604,8 @@ module Block = struct
   external get_selected_block : unit -> t option
     = "monda_get_selected_block"
 
+  (* CR mshinwell: Clarify what "symbol" means.  For gdb this is more than
+     object file symbols, e.g. variables are covered too. *)
   external lookup_symbol : t -> string -> Symbol.t option
     = "monda_block_lookup_symbol"
 

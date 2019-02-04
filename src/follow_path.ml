@@ -27,7 +27,7 @@
 (*                                                                         *)
 (***************************************************************************)
 
-[@@@ocaml.warning "+a-4-9-30-40-41-42"]
+[@@@ocaml.warning "+a-4-30-40-41-42"]
 
 let debug = Monda_debug.debug
 
@@ -109,6 +109,131 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     | None -> false
     | Some _ -> true
 
+(*
+  let rec size_of_module_type (mod_ty : Types.module_type) =
+    match mod_ty with
+    | Mty_ident _ -> 0
+    | Mty_signature sig_items -> size_of_signature sig_items
+    | Mty_functor _
+    | Mty_alias _ -> 0
+
+  and size_of_signature (sig_items : Types.signature) =
+    List.fold_left (fun size item ->
+        size + size_of_signature_item item)
+      0
+      sig_items
+
+  and size_of_signature_item (sig_item : Types.signature_item) =
+    match sig_item with
+    | Sig_value (_, val_desc) ->
+      begin match val_desc.val_kind with
+      | Val_prim _ -> 0
+      | _ -> 1
+      end
+    | Sig_type _ -> 0
+    | Sig_typext _ -> 1
+    | Sig_module (_, { md_type; _ }, _) -> size_of_module_type md_type
+    | Sig_modtype _ -> 0
+    | Sig_class _ -> 1
+    | Sig_class_type _ -> 0
+*)
+
+  let project_field_from_module mod_ty field_name =
+    let cannot_handle what =
+      Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
+          project @{<variable_name_colour>%s@} from a module \
+          (unsupported %s case)\n%!"
+        field_name
+        what;
+      None
+    in
+    if debug then begin
+      Format.eprintf "Project_name %s from module type:@ %a\n%!"
+        field_name
+        Printtyp.modtype mod_ty
+    end;
+    match mod_ty with
+    | Mty_ident path ->
+      cannot_handle (
+        Printf.sprintf "Mty_ident (%s)" (Path.name path));
+    | Mty_signature sig_items ->
+      let _pos, found_ty =
+        List.fold_left
+          (fun (pos, found_ty) (item : Types.signature_item) ->
+            match found_ty with
+            | Some _ -> pos, found_ty
+            | None ->
+              match item with
+              | Sig_value (ident, { val_type; _ }) ->
+                if String.equal field_name (Ident.name ident) then
+                  let ty : Cmt_file.core_or_module_type = Core val_type in
+                  pos (* doesn't matter *), Some (pos, ty)
+                else
+                  let pos =
+                    match val_desc.val_kind with
+                    | Val_prim _ -> pos
+                    | _ -> pos + 1
+                  in
+                  pos, None
+              | Sig_typext _ -> pos + 1, None
+              | Sig_module (ident, { md_type = _; _ }, _) ->
+                if String.equal field_name (Ident.name ident) then
+                  let ty : Cmt_file.core_or_module_type = Module md_type in
+                  pos (* doesn't matter *), Some (pos, ty)
+                else
+                  pos + 1, None
+              | Sig_class _ -> pos + 1, None
+              | Sig_type _
+              | Sig_modtype _
+              | Sig_class_type _ -> pos, None)
+          (0, None)
+          sig_items
+      in
+      begin match found_ty with
+      | None ->
+        Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
+            project non-existent field @{<variable_name_colour>%s@} \
+            from module\n%!"
+          field_name;
+        None
+      | Some (pos, val_desc) ->
+        if debug then begin
+          Format.eprintf "Need field %d\n%!" pos;
+        end;
+        if not (D.Obj.is_block v)
+          || D.Obj.tag_exn v <> 0
+          || D.Obj.size_exn v <= pos
+        then begin
+          let desc =
+            if not (D.Obj.is_block v) then
+              "value is not a block"
+            else
+              Printf.sprintf "block has size %d and tag %d"
+                (D.Obj.size_exn v)
+                (D.Obj.tag_exn v)
+          in
+          Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
+              project field @{<variable_name_colour>%s@} \
+              from module: value %a is malformed. @ (Wanted field %d; %s)\n%!"
+            field_name
+            D.Obj.print v
+            pos
+            desc;
+          None
+        end else begin
+          let address_of_v = Some (D.Obj.address_of_field v pos) in
+          let v = D.Obj.field_exn v pos in
+          (* CR mshinwell: Is this the correct [env]? *)
+          find_component ~path:next ~ty ~env
+            ~previous_was_mutable:false
+            ~address_of_v
+            ~what_was_above:Module
+            v
+        end
+      end
+    | Mty_functor _ -> cannot_handle "Mty_functor"
+    | Mty_alias _ -> cannot_handle "Mty_alias"
+
   type _ lvalue_or_rvalue =
     | Lvalue : D.target_addr lvalue_or_rvalue
     | Rvalue : (D.Obj.t * Cmt_file.core_or_module_type * Env.t) lvalue_or_rvalue
@@ -162,80 +287,6 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                 field_name;
               None
             | Module mod_ty ->
-              let cannot_handle what =
-                Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
-                    project @{<variable_name_colour>%s@} from a module \
-                    (unsupported %s case)\n%!"
-                  field_name
-                  what;
-                None
-              in
-              match mod_ty with
-              | Mty_ident path ->
-                cannot_handle (
-                  Printf.sprintf "Mty_ident (%s)" (Path.name path));
-              | Mty_signature sig_items ->
-                let _pos, found_val_desc =
-                  List.fold_left
-                    (fun (pos, found_val_desc) (item : Types.signature_item) ->
-                      match found_val_desc with
-                      | Some _ -> pos, found_val_desc
-                      | None ->
-                        match item with
-                        | Sig_value (ident, val_desc) ->
-                          if String.equal field_name (Ident.name ident) then
-                            pos (* doesn't matter *), Some (pos, val_desc)
-                          else
-                            let pos =
-                              match val_desc.val_kind with
-                              | Val_prim _ -> pos
-                              | _ -> pos + 1
-                            in
-                            pos, None
-                        | Sig_typext _
-                        | Sig_module _ (* XXX need to calculate its length *)
-                        | Sig_class _ -> pos + 1, None
-                        | Sig_type _
-                        | Sig_modtype _
-                        | Sig_class_type _ -> pos, None)
-                    (0, None)
-                    sig_items
-                in
-                begin match found_val_desc with
-                | None ->
-                  Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
-                      project non-existent field @{<variable_name_colour>%s@} \
-                      from module\n%!"
-                    field_name;
-                  None
-                | Some (pos, val_desc) ->
-                  if not (D.Obj.is_block v)
-                    || D.Obj.tag_exn v <> 0
-                    || D.Obj.size_exn v <= pos
-                  then begin
-                    Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
-                        project field @{<variable_name_colour>%s@} \
-                        from module: block %a is malformed\n%!"
-                      field_name
-                      D.Obj.print v;
-                    None
-                  end else begin
-                    let ty : Cmt_file.core_or_module_type =
-                      Core val_desc.val_type
-                    in
-                    let address_of_v = Some (D.Obj.address_of_field v pos) in
-                    let v = D.Obj.field_exn v pos in
-                    (* CR mshinwell: Is this the correct [env]? *)
-                    find_component ~path:next ~ty ~env
-                      ~previous_was_mutable:false
-                      ~address_of_v
-                      ~what_was_above:Module
-                      v
-                  end
-                end
-              | Mty_functor _ -> cannot_handle "Mty_functor"
-              | Mty_alias _ -> cannot_handle "Mty_alias"
-            end
           | Core_value ->
             begin match oracle_result with
             | Record (_path, params, args, fields, _record_repr, env) ->
@@ -432,10 +483,9 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         | Variable { next; _ } -> next
       in
       if debug then Printf.printf "calling Symbol.value\n%!";
-      match D.Symbol.value symbol (Some frame) block with
-      | No_value -> None
-      | Synthetic_ptr _ -> None  (* See CR above, we should handle this *)
-      | Exists_on_target starting_point ->
+      match D.Symbol.address symbol with
+      | None -> None
+      | Some starting_point ->
         evaluate_given_starting_point t ~path
           type_and_env ~lvalue_or_rvalue ~must_be_mutable
           ~formatter ~what_was_above starting_point
