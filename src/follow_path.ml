@@ -418,22 +418,11 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     if debug then Printf.printf "calling Block.get_selected_block\n%!";
     D.Block.get_selected_block ()
     >>= fun block ->
-    let rec lookup_symbol block name =
-      if debug then Printf.printf "calling lookup_symbol `%s'\n%!" name;
-      match D.Block.lookup_symbol block name with
-      | Some symbol -> Some symbol
-      | None ->
-        match D.Block.parent block with
-        | None -> None
-        | Some block ->
-          if debug then Printf.printf "moving to parent block\n%!";
-          lookup_symbol block name
-    in
-    match lookup_symbol block name with
+    match D.Block.lookup_symbol block name with
     | None ->
       Format.fprintf formatter "@{<error_colour>Error:@} Cannot find %s \
           @{<variable_name_colour>%s@} \
-          in the current block\n%!"
+          starting from the current block\n%!"
         (match what_was_above with
           | Module -> "module"
           | Core_value -> "variable")

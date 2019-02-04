@@ -341,3 +341,48 @@ monda_demangle (char* mangled, int options)
 
   CAMLreturnT (char*, res);
 }
+
+extern "C" struct block_symbol
+monda_lookup_symbol_nonlocal (const struct language_defn *langdef,
+                              const char *name,
+                              const struct block *block,
+                              const domain_enum domain)
+{
+  CAMLparam0 ();
+  CAMLlocal3 (v_name, v_block, v_symbol_and_block);
+  struct block_symbol res;
+
+  res.symbol = NULL;
+  res.block = NULL;
+
+  if (domain != VAR_DOMAIN) {
+    CAMLreturnT (struct block_symbol, res);
+  }
+
+  v_name = caml_copy_string (name);
+  v_block = caml_copy_nativeint ((intnat) block);
+
+  static caml_value* cb = NULL;
+  if (cb == NULL) {
+    cb = caml_named_value ("From_gdb_ocaml.lookup_symbol_nonlocal");
+    assert (cb != NULL);
+  }
+
+  v_symbol_and_block = caml_callback2 (*cb, v_name, v_block);
+
+  if (!Is_block (v_symbol_and_block)) {
+    CAMLreturnT (struct block_symbol, res);
+  }
+
+  assert (Wosize_val (v_symbol_and_block) == 1);
+  assert (Is_block (Field (v_symbol_and_block, 0)));
+  assert (Wosize_val (Field (v_symbol_and_block, 0)) == 2);
+
+  res.symbol = (struct symbol*)
+    Nativeint_val (Field (Field (v_symbol_and_block, 0), 0));
+
+  res.block = (struct block*)
+    Nativeint_val (Field (Field (v_symbol_and_block, 0), 1));
+
+  CAMLreturnT (struct block_symbol, res);
+}

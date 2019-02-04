@@ -247,7 +247,11 @@ module type S_base = sig
     val lookup_symbol : t -> string -> Symbol.t option
 
     val parent : t -> t option
+
+    val scope : t -> string option
   end
+
+  val lookup_global_symbol : name:string -> (Symbol.t * Block.t) option
 
   (** Extract values for the given compilation unit that are transmitted via
       OCaml-specific DWARF attributes. *)
@@ -283,6 +287,7 @@ module type S_base = sig
 
   (** Attempt to resolve a name to a global symbol (e.g. one corresponding
       to an Flambda-lifted allocated constant). *)
+  (* CR mshinwell: remove *)
   val find_global_symbol : name:string -> find_named_value_result
 
   type stream

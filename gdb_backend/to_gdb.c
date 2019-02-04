@@ -997,9 +997,52 @@ caml_value monda_block_parent (caml_value v_block)
   CAMLreturn (v_result);
 }
 
-static caml_value monda_block_lookup_symbol0 (caml_value v_block,
-                                              caml_value v_symbol_name,
-                                              const domain_enum domain)
+extern "C"
+caml_value monda_block_scope (caml_value v_block)
+{
+  CAMLparam1 (v_block);
+  CAMLlocal1 (v_result);
+
+  const struct block* block = (const struct block*) Nativeint_val (v_block);
+  const char* scope = block_scope (block);
+
+  if (scope == NULL) {
+    CAMLreturn (Val_long (0));
+  }
+
+  v_result = caml_alloc (1, 0);
+  Store_field (v_result, 0, caml_copy_string (scope));
+  CAMLreturn (v_result);
+}
+
+extern "C" caml_value
+monda_lookup_global_symbol (caml_value v_symbol_name)
+{
+  CAMLparam1 (v_symbol_name);
+  CAMLlocal2 (v_symbol_and_block, v_result);
+
+  struct block_symbol block_and_sym =
+    lookup_global_symbol (String_val (v_symbol_name), NULL, VAR_DOMAIN);
+
+  if (block_and_sym.symbol == NULL) {
+    CAMLreturn (Val_long (0));
+  }
+
+  v_symbol_and_block = caml_alloc (2, 0);
+  Store_field (v_symbol_and_block, 0,
+               caml_copy_nativeint ((intnat) block_and_sym.symbol));
+  Store_field (v_symbol_and_block, 1,
+               caml_copy_nativeint ((intnat) block_and_sym.block));
+
+  v_result = caml_alloc (1, 0);
+  Store_field (v_result, 0, v_symbol_and_block);
+
+  CAMLreturn (v_result);
+}
+
+extern "C" caml_value
+monda_block_lookup_symbol (caml_value v_block,
+                           caml_value v_symbol_name)
 {
   CAMLparam2 (v_block, v_symbol_name);
   CAMLlocal1 (v_result);
@@ -1014,20 +1057,16 @@ static caml_value monda_block_lookup_symbol0 (caml_value v_block,
 
   struct symbol* symbol;
   TRY {
-    if (BLOCK_SUPERBLOCK (block) == NULL) {
-      struct block_symbol block_and_sym =
-        lookup_global_symbol (symbol_name, NULL, domain);
-      symbol = block_and_sym.symbol;
-    }
-    else {
-      symbol = block_lookup_symbol (block, symbol_name,
-                                    symbol_name_match_type::FULL,
-                                    domain);
-    }
+    struct block_symbol block_and_sym =
+      lookup_symbol_in_language (symbol_name, block,
+                                 VAR_DOMAIN, language_ocaml,
+                                 NULL);
 
-    if (symbol == NULL) {
+    if (block_and_sym.symbol == NULL) {
       CAMLreturn (Val_long (0));
     }
+
+    symbol = block_and_sym.symbol;
   }
   CATCH (except, RETURN_MASK_ERROR) {
     CAMLreturn (Val_long (0));
@@ -1038,20 +1077,6 @@ static caml_value monda_block_lookup_symbol0 (caml_value v_block,
   Store_field (v_result, 0, caml_copy_nativeint ((intnat) symbol));
 
   CAMLreturn (v_result);
-}
-
-extern "C"
-caml_value monda_block_lookup_symbol (caml_value v_block,
-                                      caml_value v_symbol_name)
-{
-  caml_value result;
-
-  result = monda_block_lookup_symbol0 (v_block, v_symbol_name, VAR_DOMAIN);
-  if (Is_block (result)) {
-    return result;
-  }
-
-  return monda_block_lookup_symbol0 (v_block, v_symbol_name, MODULE_DOMAIN);
 }
 
 extern "C"

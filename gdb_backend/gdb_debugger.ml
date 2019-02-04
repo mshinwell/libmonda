@@ -611,7 +611,16 @@ module Block = struct
 
   external parent : t -> t option
     = "monda_block_parent"
+
+  external scope : t -> string option
+    = "monda_block_scope"
 end
+
+external lookup_global_symbol : string -> (Symbol.t * Block.t) option
+  = "monda_lookup_global_symbol"
+
+let lookup_global_symbol ~name =
+  lookup_global_symbol name
 
 let filename_and_line_number_of_pc addr
       ~use_previous_line_number_if_on_boundary =

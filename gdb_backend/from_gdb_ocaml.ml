@@ -28,6 +28,7 @@
 (***************************************************************************)
 
 module Gdb_debugger_with_traversal = Unified_value_traversal.Make (Gdb_debugger)
+module D = Gdb_debugger_with_traversal
 
 module Load_path = Load_path.Make (Gdb_debugger_with_traversal)
 module Cmt_cache = Cmt_cache.Make (Load_path)
@@ -139,9 +140,39 @@ let demangle ~mangled_name =
   (* CR mshinwell: this needs revisiting. *)
   Some mangled_name
 
+let lookup_symbol_nonlocal (name : string) (block : D.Block.t) =
+  if Monda_debug.debug then begin
+    Printf.printf "From_gdb_ocaml.lookup_symbol_nonlocal: %s\n%!" name
+  end;
+  match D.Block.scope block with
+  | None -> None
+  | Some scope ->
+    let components = String.split_on_char '.' scope in
+    let components_rev = List.rev components in
+    let rec search components_rev =
+      match components_rev with
+      | [] ->
+        if Monda_debug.debug then begin
+          Printf.printf "From_gdb_ocaml.lookup_symbol_nonlocal failed\n%!"
+        end;
+        None
+      | component::next_components_rev ->
+        let scope = String.concat "." (List.rev components_rev) in
+        let name = scope ^ "." ^ name in
+        if Monda_debug.debug then begin
+          Printf.printf "Looking up global symbol: %s\n%!" name
+        end;
+        match D.lookup_global_symbol ~name with
+        | None -> search next_components_rev
+        | Some (symbol, block) -> Some (symbol, block)
+    in
+    search components_rev
+
 let () =
   Callback.register "From_gdb_ocaml.print_value" print_value;
   Callback.register "From_gdb_ocaml.print_type" print_type;
   Callback.register "From_gdb_ocaml.demangle" demangle;
   Callback.register "From_gdb_ocaml.evaluate" evaluate;
-  Callback.register "From_gdb_ocaml.parse" parse
+  Callback.register "From_gdb_ocaml.parse" parse;
+  Callback.register "From_gdb_ocaml.lookup_symbol_nonlocal"
+    lookup_symbol_nonlocal
