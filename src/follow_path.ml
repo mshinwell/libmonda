@@ -48,7 +48,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
   (* CR-someday mshinwell: extend to support other things *)
   type parsed =
     | Identity
-    | Module of { name : string; next : parsed; }
+    | Project_module of { name : string; next : parsed; }
     | Project_index of { index : int; next : parsed; }
     | Project_name of { field_name : string; next : parsed; }
 
@@ -92,7 +92,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                 let first_letter = String.get component 0 in
                 let upper_first_letter = Char.uppercase_ascii first_letter in
                 if first_letter = upper_first_letter then
-                  Some (Module { name = component; next; })
+                  Some (Project_module { name = component; next; })
                 else
                   Some (Project_name { field_name = component; next; }))
           rest_of_path
@@ -109,131 +109,6 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     | None -> false
     | Some _ -> true
 
-(*
-  let rec size_of_module_type (mod_ty : Types.module_type) =
-    match mod_ty with
-    | Mty_ident _ -> 0
-    | Mty_signature sig_items -> size_of_signature sig_items
-    | Mty_functor _
-    | Mty_alias _ -> 0
-
-  and size_of_signature (sig_items : Types.signature) =
-    List.fold_left (fun size item ->
-        size + size_of_signature_item item)
-      0
-      sig_items
-
-  and size_of_signature_item (sig_item : Types.signature_item) =
-    match sig_item with
-    | Sig_value (_, val_desc) ->
-      begin match val_desc.val_kind with
-      | Val_prim _ -> 0
-      | _ -> 1
-      end
-    | Sig_type _ -> 0
-    | Sig_typext _ -> 1
-    | Sig_module (_, { md_type; _ }, _) -> size_of_module_type md_type
-    | Sig_modtype _ -> 0
-    | Sig_class _ -> 1
-    | Sig_class_type _ -> 0
-*)
-
-  let project_field_from_module mod_ty field_name =
-    let cannot_handle what =
-      Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
-          project @{<variable_name_colour>%s@} from a module \
-          (unsupported %s case)\n%!"
-        field_name
-        what;
-      None
-    in
-    if debug then begin
-      Format.eprintf "Project_name %s from module type:@ %a\n%!"
-        field_name
-        Printtyp.modtype mod_ty
-    end;
-    match mod_ty with
-    | Mty_ident path ->
-      cannot_handle (
-        Printf.sprintf "Mty_ident (%s)" (Path.name path));
-    | Mty_signature sig_items ->
-      let _pos, found_ty =
-        List.fold_left
-          (fun (pos, found_ty) (item : Types.signature_item) ->
-            match found_ty with
-            | Some _ -> pos, found_ty
-            | None ->
-              match item with
-              | Sig_value (ident, { val_type; _ }) ->
-                if String.equal field_name (Ident.name ident) then
-                  let ty : Cmt_file.core_or_module_type = Core val_type in
-                  pos (* doesn't matter *), Some (pos, ty)
-                else
-                  let pos =
-                    match val_desc.val_kind with
-                    | Val_prim _ -> pos
-                    | _ -> pos + 1
-                  in
-                  pos, None
-              | Sig_typext _ -> pos + 1, None
-              | Sig_module (ident, { md_type = _; _ }, _) ->
-                if String.equal field_name (Ident.name ident) then
-                  let ty : Cmt_file.core_or_module_type = Module md_type in
-                  pos (* doesn't matter *), Some (pos, ty)
-                else
-                  pos + 1, None
-              | Sig_class _ -> pos + 1, None
-              | Sig_type _
-              | Sig_modtype _
-              | Sig_class_type _ -> pos, None)
-          (0, None)
-          sig_items
-      in
-      begin match found_ty with
-      | None ->
-        Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
-            project non-existent field @{<variable_name_colour>%s@} \
-            from module\n%!"
-          field_name;
-        None
-      | Some (pos, val_desc) ->
-        if debug then begin
-          Format.eprintf "Need field %d\n%!" pos;
-        end;
-        if not (D.Obj.is_block v)
-          || D.Obj.tag_exn v <> 0
-          || D.Obj.size_exn v <= pos
-        then begin
-          let desc =
-            if not (D.Obj.is_block v) then
-              "value is not a block"
-            else
-              Printf.sprintf "block has size %d and tag %d"
-                (D.Obj.size_exn v)
-                (D.Obj.tag_exn v)
-          in
-          Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
-              project field @{<variable_name_colour>%s@} \
-              from module: value %a is malformed. @ (Wanted field %d; %s)\n%!"
-            field_name
-            D.Obj.print v
-            pos
-            desc;
-          None
-        end else begin
-          let address_of_v = Some (D.Obj.address_of_field v pos) in
-          let v = D.Obj.field_exn v pos in
-          (* CR mshinwell: Is this the correct [env]? *)
-          find_component ~path:next ~ty ~env
-            ~previous_was_mutable:false
-            ~address_of_v
-            ~what_was_above:Module
-            v
-        end
-      end
-    | Mty_functor _ -> cannot_handle "Mty_functor"
-    | Mty_alias _ -> cannot_handle "Mty_alias"
-
   type _ lvalue_or_rvalue =
     | Lvalue : D.target_addr lvalue_or_rvalue
     | Rvalue : (D.Obj.t * Cmt_file.core_or_module_type * Env.t) lvalue_or_rvalue
@@ -242,188 +117,283 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         type_and_env ~(lvalue_or_rvalue : obj_or_addr lvalue_or_rvalue)
         ~must_be_mutable ~formatter ~(what_was_above : what_was_above)
         v : obj_or_addr option =
-    match type_and_env with
-    | None -> None
-    | Some (ty, env, _is_parameter) ->
-      let rec find_component ~path ~ty ~env ~previous_was_mutable
-            ~(address_of_v : D.target_addr option)
-            ~(what_was_above : what_was_above)
-            (v : D.Obj.t)  (* CR mshinwell: this should be a [Value.t] *)
-            : obj_or_addr option =
-        let oracle_result =
-          let scrutinee = D.Value.create_exists_on_target v in
-          Our_type_oracle.find_type_information t.type_oracle ~formatter
-            (Some (ty, env)) ~scrutinee
+    let rec project_field_from_module env (ty : Cmt_file.core_or_module_type)
+          field_name v ~next : obj_or_addr option =
+      match ty with
+      | Core _ ->
+        (* CR mshinwell: Improve error messages *)
+        Format.fprintf formatter "@{<error_colour>Error: @}Expected \
+            module type for projecting @{<variable_name_colour>%s@}, \
+            but have core type\n%!"
+          field_name;
+        None
+      | Module mod_ty ->
+        let cannot_handle what =
+          Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
+              project @{<variable_name_colour>%s@} from a module \
+              (unsupported %s case)\n%!"
+            field_name
+            what;
+          None
         in
-        match path with
-        | Identity ->
-          if must_be_mutable && (not previous_was_mutable) then begin
-            None
-          end else begin
-            match lvalue_or_rvalue with
-            | Lvalue -> address_of_v
-            | Rvalue -> Some (v, ty, env)
-          end
-        | Module _ ->
-          begin match what_was_above with
-          | Core_value ->
+        if debug then begin
+          Format.eprintf "Project_name %s from module type:@ %a\n%!"
+            field_name
+            Printtyp.modtype mod_ty
+        end;
+        match mod_ty with
+        | Mty_ident path ->
+          cannot_handle (
+            Printf.sprintf "Mty_ident (%s)" (Path.name path));
+        | Mty_signature sig_items ->
+          let _pos, found_ty =
+            List.fold_left
+              (fun (pos, found_ty) (item : Types.signature_item) ->
+                match found_ty with
+                | Some _ -> pos, found_ty
+                | None ->
+                  match item with
+                  | Sig_value (ident, { val_type; val_kind; _ }) ->
+                    if String.equal field_name (Ident.name ident) then
+                      let ty : Cmt_file.core_or_module_type = Core val_type in
+                      pos (* doesn't matter *), Some (pos, ty)
+                    else
+                      let pos =
+                        match val_kind with
+                        | Val_prim _ -> pos
+                        | _ -> pos + 1
+                      in
+                      pos, None
+                  | Sig_typext _ -> pos + 1, None
+                  | Sig_module (ident, { md_type; _ }, _) ->
+                    if String.equal field_name (Ident.name ident) then
+                      let ty : Cmt_file.core_or_module_type = Module md_type in
+                      pos (* doesn't matter *), Some (pos, ty)
+                    else
+                      pos + 1, None
+                  | Sig_class _ -> pos + 1, None
+                  | Sig_type _
+                  | Sig_modtype _
+                  | Sig_class_type _ -> pos, None)
+              (0, None)
+              sig_items
+          in
+          begin match found_ty with
+          | None ->
             Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
-              project a module out of a core (non-module) value\n%!";
+                project non-existent field @{<variable_name_colour>%s@} \
+                from module\n%!"
+              field_name;
             None
-          | Module ->
-            (* Projecting modules from modules is going to be similar to
-               the values from modules case below. *)
-            None
-          end
-        | Project_name { field_name; next; } ->
-          begin match what_was_above with
-          | Module ->
-            begin match ty with
-            | Core _ ->
-              (* CR mshinwell: Improve error messages *)
-              Format.fprintf formatter "@{<error_colour>Error: @}Expected \
-                  module type for projecting @{<variable_name_colour>%s@}, \
-                  but have core type\n%!"
-                field_name;
+          | Some (pos, ty) ->
+            if debug then begin
+              Format.eprintf "Need field %d\n%!" pos;
+            end;
+            if not (D.Obj.is_block v)
+              || D.Obj.tag_exn v <> 0
+              || D.Obj.size_exn v <= pos
+            then begin
+              let desc =
+                if not (D.Obj.is_block v) then
+                  "value is not a block"
+                else
+                  Printf.sprintf "block has size %d and tag %d"
+                    (D.Obj.size_exn v)
+                    (D.Obj.tag_exn v)
+              in
+              Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
+                  project field @{<variable_name_colour>%s@} \
+                  from module: value %a is malformed. @ (Wanted field %d; %s)\n%!"
+                field_name
+                D.Obj.print v
+                pos
+                desc;
               None
-            | Module mod_ty ->
-          | Core_value ->
-            begin match oracle_result with
-            | Record (_path, params, args, fields, _record_repr, env) ->
-              let fields = Array.of_list fields in
-              let found = ref None in
-              for index = 0 to Array.length fields - 1 do
-                let decl = fields.(index) in
-                if Ident.name decl.ld_id = field_name then begin
-                  found := Some (index, decl)
-                end
-              done;
-              begin match !found with
-              | None -> None
-              | Some (index, decl) ->
-                if (not (D.Obj.is_block v))
-                  || D.Obj.size_exn v <= index
+            end else begin
+              let address_of_v = Some (D.Obj.address_of_field v pos) in
+              let v = D.Obj.field_exn v pos in
+              (* CR mshinwell: Is this the correct [env]? *)
+              find_component ~path:next ~ty ~env
+                ~previous_was_mutable:false
+                ~address_of_v
+                ~what_was_above:Module
+                v
+            end
+          end
+        | Mty_functor _ -> cannot_handle "Mty_functor"
+        | Mty_alias _ -> cannot_handle "Mty_alias"
+    and find_component ~path ~ty ~env ~previous_was_mutable
+          ~(address_of_v : D.target_addr option)
+          ~(what_was_above : what_was_above)
+          (v : D.Obj.t) (* CR mshinwell: this should be a [Value.t] *)
+          : obj_or_addr option =
+      let oracle_result =
+        let scrutinee = D.Value.create_exists_on_target v in
+        Our_type_oracle.find_type_information t.type_oracle ~formatter
+          (Some (ty, env)) ~scrutinee
+      in
+      match path with
+      | Identity ->
+        if must_be_mutable && (not previous_was_mutable) then begin
+          None
+        end else begin
+          match lvalue_or_rvalue with
+          | Lvalue -> address_of_v
+          | Rvalue -> Some (v, ty, env)
+        end
+      | Project_module { name; next; } ->
+        begin match what_was_above with
+        | Core_value ->
+          Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
+            project a module out of a core (non-module) value\n%!";
+          None
+        | Module ->
+          project_field_from_module env ty name v ~next
+        end
+      | Project_name { field_name; next; } ->
+        begin match what_was_above with
+        | Module ->
+          project_field_from_module env ty field_name v ~next
+        | Core_value ->
+          begin match oracle_result with
+          | Record (_path, params, args, fields, _record_repr, env) ->
+            let fields = Array.of_list fields in
+            let found = ref None in
+            for index = 0 to Array.length fields - 1 do
+              let decl = fields.(index) in
+              if Ident.name decl.ld_id = field_name then begin
+                found := Some (index, decl)
+              end
+            done;
+            begin match !found with
+            | None -> None
+            | Some (index, decl) ->
+              if (not (D.Obj.is_block v))
+                || D.Obj.size_exn v <= index
+              then
+                None
+              else
+                let field = D.Obj.field_exn v index in
+                let address_of_field = D.Obj.address_of_field v index in
+                let field_type =
+                  try Ctype.apply env params decl.ld_type args
+                  with Ctype.Cannot_apply -> decl.ld_type
+                in
+                let field_is_mutable =
+                  match decl.ld_mutable with
+                  | Immutable -> false
+                  | Mutable -> true
+                in
+                find_component ~path:next ~ty:(Cmt_file.Core field_type) ~env
+                  ~previous_was_mutable:field_is_mutable
+                  ~address_of_v:(Some address_of_field)
+                  ~what_was_above:Core_value
+                  field
+            end
+          | _ -> None
+          end
+        end
+      | Project_index { index; next; } ->
+        begin match what_was_above with
+        | Module ->
+          Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
+            project by index out of a module\n%!";
+          None
+        | Core_value ->
+          let tuple_like ~element_types ~env =
+            let element_types = Array.of_list element_types in
+            if index >= D.Obj.size_exn v
+              || index >= Array.length element_types
+            then
+              None
+            else
+              let address_of_element = D.Obj.address_of_field v index in
+              let element = D.Obj.field_exn v index in
+              let element_type = element_types.(index) in
+              find_component ~path:next ~ty:(Cmt_file.Core element_type) ~env
+                ~previous_was_mutable:false
+                ~address_of_v:(Some address_of_element)
+                ~what_was_above:Core_value
+                element
+          in
+          begin match oracle_result with
+          | Array (element_type, env) ->
+            if index >= D.Obj.size_exn v then
+              None
+            else
+              let address_of_element = D.Obj.address_of_field v index in
+              let element = D.Obj.field_exn v index in
+              find_component ~path:next ~ty:(Cmt_file.Core element_type) ~env
+                ~previous_was_mutable:false
+                ~address_of_v:(Some address_of_element)
+                ~what_was_above:Core_value
+                element
+          | Tuple (element_types, env) -> tuple_like ~element_types ~env
+          | Ref (element_type, env) ->
+            tuple_like ~element_types:[element_type] ~env
+          | List (element_type, env) ->
+            assert (index >= 0);
+            if (not (D.Obj.is_block v))
+              || (D.Obj.size_exn v <> 2)
+              || (D.Obj.tag_exn v <> 0)
+            then
+              None
+            else if index = 0 then
+              let address_of_element = D.Obj.address_of_field v 0 in
+              let element = D.Obj.field_exn v 0 in
+              find_component ~path:next ~ty:(Cmt_file.Core element_type)
+                ~env ~previous_was_mutable:false
+                ~address_of_v:(Some address_of_element)
+                ~what_was_above:Core_value
+                element
+            else
+              let address_of_tail = D.Obj.address_of_field v 1 in
+              let tail = D.Obj.field_exn v 1 in
+              let path = Project_index { index = index - 1; next; } in
+              find_component ~path ~ty ~env
+                ~previous_was_mutable:false
+                ~address_of_v:(Some address_of_tail)
+                ~what_was_above:Core_value
+                tail
+          | Non_constant_constructor (_, ctor_decls, _, _, env, _) ->
+            assert (index >= 0);
+            if not (D.Obj.is_block v) then
+              None
+            else
+              let tag = D.Obj.tag_exn v in
+              if tag < 0 || tag >= List.length ctor_decls then
+                None
+              else
+                let ctor_decl = List.nth ctor_decls tag in
+                let ctor_arg_types =
+                  match ctor_decl.cd_args with
+                  | Cstr_tuple types -> Array.of_list types
+                  | Cstr_record lds ->
+                    Array.of_list (
+                      List.map (fun (ld : Types.label_declaration) ->
+                          ld.ld_type)
+                        lds)
+                in
+                if index >= D.Obj.size_exn v
+                  || index >= Array.length ctor_arg_types
                 then
                   None
                 else
-                  let field = D.Obj.field_exn v index in
-                  let address_of_field = D.Obj.address_of_field v index in
-                  let field_type =
-                    try Ctype.apply env params decl.ld_type args
-                    with Ctype.Cannot_apply -> decl.ld_type
-                  in
-                  let field_is_mutable =
-                    match decl.ld_mutable with
-                    | Immutable -> false
-                    | Mutable -> true
-                  in
-                  find_component ~path:next ~ty:(Cmt_file.Core field_type) ~env
-                    ~previous_was_mutable:field_is_mutable
-                    ~address_of_v:(Some address_of_field)
+                  let address_of_element = D.Obj.address_of_field v index in
+                  let element = D.Obj.field_exn v index in
+                  let element_type = ctor_arg_types.(index) in
+                  find_component ~path:next ~ty:(Cmt_file.Core element_type)
+                    ~env ~previous_was_mutable:false
+                    ~address_of_v:(Some address_of_element)
                     ~what_was_above:Core_value
-                    field
-              end
-            | _ -> None
-            end
+                    element
+          | _ -> None
           end
-        | Project_index { index; next; } ->
-          begin match what_was_above with
-          | Module ->
-            Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
-              project by index out of a module\n%!";
-            None
-          | Core_value ->
-            let tuple_like ~element_types ~env =
-              let element_types = Array.of_list element_types in
-              if index >= D.Obj.size_exn v
-                || index >= Array.length element_types
-              then
-                None
-              else
-                let address_of_element = D.Obj.address_of_field v index in
-                let element = D.Obj.field_exn v index in
-                let element_type = element_types.(index) in
-                find_component ~path:next ~ty:(Cmt_file.Core element_type) ~env
-                  ~previous_was_mutable:false
-                  ~address_of_v:(Some address_of_element)
-                  ~what_was_above:Core_value
-                  element
-            in
-            begin match oracle_result with
-            | Array (element_type, env) ->
-              if index >= D.Obj.size_exn v then
-                None
-              else
-                let address_of_element = D.Obj.address_of_field v index in
-                let element = D.Obj.field_exn v index in
-                find_component ~path:next ~ty:(Cmt_file.Core element_type) ~env
-                  ~previous_was_mutable:false
-                  ~address_of_v:(Some address_of_element)
-                  ~what_was_above:Core_value
-                  element
-            | Tuple (element_types, env) -> tuple_like ~element_types ~env
-            | Ref (element_type, env) ->
-              tuple_like ~element_types:[element_type] ~env
-            | List (element_type, env) ->
-              assert (index >= 0);
-              if (not (D.Obj.is_block v))
-                || (D.Obj.size_exn v <> 2)
-                || (D.Obj.tag_exn v <> 0)
-              then
-                None
-              else if index = 0 then
-                let address_of_element = D.Obj.address_of_field v 0 in
-                let element = D.Obj.field_exn v 0 in
-                find_component ~path:next ~ty:(Cmt_file.Core element_type)
-                  ~env ~previous_was_mutable:false
-                  ~address_of_v:(Some address_of_element)
-                  ~what_was_above:Core_value
-                  element
-              else
-                let address_of_tail = D.Obj.address_of_field v 1 in
-                let tail = D.Obj.field_exn v 1 in
-                let path = Project_index { index = index - 1; next; } in
-                find_component ~path ~ty ~env
-                  ~previous_was_mutable:false
-                  ~address_of_v:(Some address_of_tail)
-                  ~what_was_above:Core_value
-                  tail
-            | Non_constant_constructor (_, ctor_decls, _, _, env, _) ->
-              assert (index >= 0);
-              if not (D.Obj.is_block v) then
-                None
-              else
-                let tag = D.Obj.tag_exn v in
-                if tag < 0 || tag >= List.length ctor_decls then
-                  None
-                else
-                  let ctor_decl = List.nth ctor_decls tag in
-                  let ctor_arg_types =
-                    match ctor_decl.cd_args with
-                    | Cstr_tuple types -> Array.of_list types
-                    | Cstr_record lds ->
-                      Array.of_list (
-                        List.map (fun (ld : Types.label_declaration) ->
-                            ld.ld_type)
-                          lds)
-                  in
-                  if index >= D.Obj.size_exn v
-                    || index >= Array.length ctor_arg_types
-                  then
-                    None
-                  else
-                    let address_of_element = D.Obj.address_of_field v index in
-                    let element = D.Obj.field_exn v index in
-                    let element_type = ctor_arg_types.(index) in
-                    find_component ~path:next ~ty:(Cmt_file.Core element_type)
-                      ~env ~previous_was_mutable:false
-                      ~address_of_v:(Some address_of_element)
-                      ~what_was_above:Core_value
-                      element
-            | _ -> None
-            end
-          end
-      in
+        end
+    in
+    match type_and_env with
+    | None -> None
+    | Some (ty, env, _is_parameter) ->
       find_component ~path ~ty ~previous_was_mutable:false
         ~address_of_v:None ~env ~what_was_above v
 

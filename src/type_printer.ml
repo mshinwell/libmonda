@@ -62,7 +62,7 @@ struct
         | Some name ->
           Format.fprintf formatter "@{<variable_name_colour>%s@}" name
         end;
-        Format.fprintf formatter " : @{<type_colour>";
+        Format.fprintf formatter "@ : @{<type_colour>";
         Printtyp.wrap_printing_env ~error:false env (fun () ->
           Printtyp.reset_and_mark_loops type_expr;
           Printtyp.type_expr formatter type_expr);
@@ -85,7 +85,7 @@ struct
       | Some name ->
         Format.fprintf formatter "@{<module_name_colour>%s@}" name
       end;
-      Format.fprintf formatter " : @{<type_colour>";
+      Format.fprintf formatter "@ : @{<type_colour>";
       Printtyp.wrap_printing_env ~error:false env (fun () ->
         Printtyp.modtype formatter modtype);
       Format.fprintf formatter "@}";

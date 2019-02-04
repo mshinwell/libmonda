@@ -88,6 +88,7 @@ module Result = struct
         datum_ty : Types.type_expr;
       }
     | Custom
+    | Module of Types.module_type
     | Unknown
 
   let to_string = function
@@ -119,6 +120,7 @@ module Result = struct
     | Stdlib_map _ -> "Stdlib.Map"
     | Stdlib_hashtbl _ -> "Stdlib.Hashtbl"
     | Custom -> "Custom"
+    | Module _ -> "Module"
     | Unknown -> "Unknown"
 end
 
@@ -487,11 +489,18 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
   let find_type_information t ~formatter
         (type_and_env : (Cmt_file.core_or_module_type * Env.t) option)
         ~scrutinee =
-    let type_expr_and_env =
-      match type_and_env with
-      | None -> None
-      | Some (Core type_expr, env) -> Some (type_expr, env)
-      | Some (Module _modtype, _env) -> None
-    in
-    find_type_information t ~formatter ~type_expr_and_env ~scrutinee
+    match type_and_env with
+    | None ->
+      find_type_information t ~formatter ~type_expr_and_env:None ~scrutinee
+    | Some (Core type_expr, env) ->
+      let type_expr_and_env = Some (type_expr, env) in
+      find_type_information t ~formatter ~type_expr_and_env ~scrutinee
+    | Some (Module mod_type, _env) ->
+      if V.is_null scrutinee then Unknown
+      else if V.is_int scrutinee then Obj_immediate
+      else
+        let tag = V.tag_exn scrutinee in
+        if tag = 0 then Module mod_type
+        else if tag < Obj.lazy_tag then Obj_boxed_traversable
+        else Obj_boxed_not_traversable
 end

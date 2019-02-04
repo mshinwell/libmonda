@@ -87,6 +87,7 @@ module Result : sig
         datum_ty : Types.type_expr;
       }
     | Custom
+    | Module of Types.module_type
     | Unknown
 
   val to_string : t -> string

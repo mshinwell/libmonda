@@ -219,6 +219,7 @@ struct
       | Stdlib_hashtbl { key_env; key_ty; datum_env; datum_ty; } ->
         print_stdlib_hashtbl t state ~key_env ~key_ty ~datum_env ~datum_ty v
       | Custom -> print_custom_block t ~state v
+      | Module mod_ty -> print_module t state mod_ty v
       | Unknown -> Format.fprintf formatter "unknown"
     end;
     if state.print_sig then begin
@@ -1149,6 +1150,93 @@ struct
       end
     end
 
+  and print_module t state (mod_ty : Types.module_type) v =
+    let formatter = state.formatter in
+    let sg =
+      match mod_ty with
+      | Mty_signature sg -> Some sg
+      | Mty_ident _
+      | Mty_functor _
+      | Mty_alias _ -> None
+    in
+    match state.summary, sg with
+    | true, _
+    | _, None ->
+      Format.fprintf formatter "<module block>"
+    | _, Some sg ->
+      let fields_rev =
+        List.fold_left sg ~init:[]
+          ~f:(fun fields_rev (sig_item : Types.signature_item) ->
+            match sig_item with
+            | Sig_value (ident, { val_type; val_kind; _ }) ->
+              begin match val_kind with
+              | Val_prim _ -> fields_rev
+              | _ ->
+                let ty : Cmt_file.core_or_module_type = Core val_type in
+                (ident, Some ty) :: fields_rev
+              end
+            | Sig_typext (ident, _, _) ->
+              (* CR mshinwell: print these *)
+              (ident, None) :: fields_rev
+            | Sig_module (ident, { md_type; _ }, _) ->
+              let ty : Cmt_file.core_or_module_type = Module md_type in
+              (ident, Some ty) :: fields_rev
+            | Sig_class (ident, _, _) ->
+              (* CR mshinwell: print these *)
+              (ident, None) :: fields_rev
+            | Sig_type _
+            | Sig_modtype _
+            | Sig_class_type _ -> fields_rev)
+      in
+      let fields = Array.of_list (List.rev fields_rev) in
+      assert (V.is_block v);  (* checked in [Type_oracle] *)
+      let nb_fields = V.size_exn v in
+      if nb_fields <> Array.length fields then begin
+        Format.fprintf formatter "@{<error_colour><module block at %a \
+            has %d fields but expected %d}"
+          V.print v
+          (Array.length fields)
+          nb_fields
+      end else begin
+        if state.depth = 0 && Array.length fields > 1 then begin
+          Format.pp_print_newline formatter ();
+          Format.fprintf formatter "@[<v 2>  "
+        end;
+        Format.fprintf formatter "@[<hv 0>{ ";
+        Format.fprintf formatter "@[<hv 0>";
+        for field_nb = 0 to nb_fields - 1 do
+          if field_nb > 0 then Format.fprintf formatter "@ ";
+          try
+            let field_ident, ty_opt = fields.(field_nb) in
+            Format.fprintf formatter
+              "@[<hov 2>@{<variable_name_colour>%s@}@ =@ "
+              (Ident.name field_ident);
+            match V.field_exn v field_nb with
+            | None ->
+              Format.fprintf formatter "%s" optimized_out;
+              Format.fprintf formatter ";@]"
+            | Some v ->
+              let state = descend state ~current_operator:Separator in
+              let type_of_ident =
+                match ty_opt with
+                | None -> None
+                | Some ty ->
+                  (* CR mshinwell: Which environment to use? *)
+                  Some (ty, Env.empty, Is_parameter.local)
+              in
+              print_value t ~state ~type_of_ident v;
+              Format.fprintf formatter ";@]"
+          with D.Read_error ->
+            Format.fprintf formatter
+              "@{<error_colour><could not read field %d>}"
+              field_nb
+        done;
+        Format.fprintf formatter "@]@;}@]";
+        if state.depth = 0 && Array.length fields > 1 then begin
+          Format.fprintf formatter "@]"
+        end
+      end
+
   let print_short_value t ~state ~type_of_ident:type_and_env v : unit =
     let formatter = state.formatter in
     match
@@ -1192,6 +1280,7 @@ struct
     | Stdlib_map _ -> Format.fprintf formatter "Stdlib.Map"
     | Stdlib_hashtbl _ -> Format.fprintf formatter "Stdlib.Hashtbl"
     | Custom -> Format.fprintf formatter "custom"
+    | Module _ -> Format.fprintf formatter "<module block>"
     | Unknown -> Format.fprintf formatter "unknown"
 
   let print_short_type t ~state ~type_of_ident:type_and_env v : unit =
@@ -1234,6 +1323,7 @@ struct
     | Stdlib_map _ -> Format.fprintf formatter "Stdlib.Map"
     | Stdlib_hashtbl _ -> Format.fprintf formatter "Stdlib.Hashtbl"
     | Custom -> Format.fprintf formatter "custom"
+    | Module _ -> Format.fprintf formatter "<module>"
     | Unknown -> Format.fprintf formatter "unknown"
 
   (* CR mshinwell: remove search path param *)
@@ -1308,7 +1398,9 @@ struct
           in
           print_short_value t ~state ~type_of_ident scrutinee
         end else begin
-          print_value t ~state ~type_of_ident scrutinee
+          Format.fprintf formatter "@[<hov 2>";
+          print_value t ~state ~type_of_ident scrutinee;
+          Format.fprintf formatter "@]"
         end;
         Format.pp_print_flush formatter ()
       end)
