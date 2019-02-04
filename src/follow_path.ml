@@ -203,7 +203,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
               in
               Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
                   project field @{<variable_name_colour>%s@} \
-                  from module: value %a is malformed. @ (Wanted field %d; %s)\n%!"
+                  from module: value %a is \
+                  malformed. @ (Wanted field %d; %s)\n%!"
                 field_name
                 D.Obj.print v
                 pos

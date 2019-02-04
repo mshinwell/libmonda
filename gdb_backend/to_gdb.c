@@ -1007,11 +1007,23 @@ static caml_value monda_block_lookup_symbol0 (caml_value v_block,
   const struct block* block = (const struct block*) Nativeint_val (v_block);
   char* symbol_name = String_val (v_symbol_name);
 
+  /* CR-someday mshinwell: If we generated [DW_TAG_imported_unit] then
+     it appears to be the case that searching a global block here would also
+     search symtabs' global blocks for compilation units on which the current
+     compilation unit depends.  This would avoid the special case. */
+
   struct symbol* symbol;
   TRY {
-    symbol = block_lookup_symbol (block, symbol_name,
-                                  symbol_name_match_type::FULL,
-                                  domain);
+    if (BLOCK_SUPERBLOCK (block) == NULL) {
+      struct block_symbol block_and_sym =
+        lookup_global_symbol (symbol_name, NULL, domain);
+      symbol = block_and_sym.symbol;
+    }
+    else {
+      symbol = block_lookup_symbol (block, symbol_name,
+                                    symbol_name_match_type::FULL,
+                                    domain);
+    }
 
     if (symbol == NULL) {
       CAMLreturn (Val_long (0));
