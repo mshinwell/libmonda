@@ -147,24 +147,34 @@ let lookup_symbol_nonlocal (name : string) (block : D.Block.t) =
   match D.Block.scope block with
   | None -> None
   | Some scope ->
-    let components = String.split_on_char '.' scope in
+    if Monda_debug.debug then begin
+      Printf.printf "Scope: %S\n" scope
+    end;
+    let components =
+      if String.equal scope "" then []
+      else String.split_on_char '.' scope
+    in
     let components_rev = List.rev components in
     let rec search components_rev =
-      match components_rev with
-      | [] ->
-        if Monda_debug.debug then begin
-          Printf.printf "From_gdb_ocaml.lookup_symbol_nonlocal failed\n%!"
-        end;
-        None
-      | component::next_components_rev ->
-        let scope = String.concat "." (List.rev components_rev) in
-        let name = scope ^ "." ^ name in
-        if Monda_debug.debug then begin
-          Printf.printf "Looking up global symbol: %s\n%!" name
-        end;
-        match D.lookup_global_symbol ~name with
-        | None -> search next_components_rev
-        | Some (symbol, block) -> Some (symbol, block)
+      let scope =
+        match components_rev with
+        | [] -> ""
+        | _ -> (String.concat "." (List.rev components_rev)) ^ "."
+      in
+      let name = scope ^ name in
+      if Monda_debug.debug then begin
+        Printf.printf "Looking up global symbol: %s\n%!" name
+      end;
+      match D.lookup_global_symbol ~name with
+      | Some (symbol, block) -> Some (symbol, block)
+      | None ->
+        match components_rev with
+        | [] ->
+          if Monda_debug.debug then begin
+            Printf.printf "From_gdb_ocaml.lookup_symbol_nonlocal failed\n%!"
+          end;
+          None
+        | _::components_rev -> search components_rev
     in
     search components_rev
 

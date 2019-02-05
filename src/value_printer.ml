@@ -224,7 +224,7 @@ struct
     end;
     if state.print_sig then begin
       match type_info with
-      | Unit -> ()
+      | Unit | Module _ -> ()
       | _ ->
         let (_type_printed : bool) =
           Type_printer.print_given_type_and_env formatter type_and_env
@@ -1188,11 +1188,12 @@ struct
                 if not first then begin
                   Format.fprintf formatter "@;"
                 end;
-                let print_ident what ident =
+                let print_ident ?(print_type = fun _ppf () -> ()) what ident =
                   Format.fprintf formatter
-                    "@[<hov 2>%s @{<variable_name_colour>%s@}@ =@ "
+                    "@[<hov 2>%s @{<variable_name_colour>%s@}%a@ =@ "
                     what
                     (Ident.name ident)
+                    print_type ()
                 in
                 let print_field ty =
                   try
@@ -1215,7 +1216,10 @@ struct
                 let next_pos =
                   match sig_item with
                   | Sig_value (ident, { val_type; val_kind; _ }) ->
-                    print_ident "let" ident;
+                    print_ident ~print_type:(fun formatter () ->
+                      Format.fprintf formatter "@ : @{<type_colour>%a@}"
+                        Printtyp.type_expr val_type)
+                      "let" ident;
                     let ty : Cmt_file.core_or_module_type = Core val_type in
                     print_field ty;
                     begin match val_kind with

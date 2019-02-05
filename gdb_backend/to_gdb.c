@@ -934,6 +934,7 @@ caml_value monda_symbol_value (caml_value v_symbol, caml_value v_frame,
 }
 */
 
+/* CR mshinwell: Maybe rename this function to clarify what it's for. */
 extern "C"
 caml_value monda_symbol_address (caml_value v_symbol)
 {
@@ -945,6 +946,31 @@ caml_value monda_symbol_address (caml_value v_symbol)
   switch (SYMBOL_CLASS (symbol)) {
     case LOC_STATIC: {
       CORE_ADDR addr = SYMBOL_VALUE_ADDRESS (symbol);
+      v_result = caml_alloc (1, 0);
+      Store_field (v_result, 0, caml_copy_nativeint ((intnat) addr));
+      CAMLreturn (v_result);
+    }
+
+    case LOC_COMPUTED: {
+      symbol_needs_kind needs =
+        SYMBOL_COMPUTED_OPS(symbol)->get_symbol_read_needs(symbol);
+
+      if (needs == SYMBOL_NEEDS_FRAME
+          || SYMBOL_COMPUTED_OPS(symbol)->location_has_loclist) {
+        /* This function is intended for reading static phantom-let-bound
+           variables, which should neither need a frame to evaluate, and
+           whose value should not be PC-dependent. */
+        CAMLreturn (Val_long (0));
+      }
+
+      /* This will evaluate the DWARF location expression. */
+      struct value* v =
+        SYMBOL_COMPUTED_OPS(symbol)->read_variable (symbol, NULL);
+      if (v == NULL || !value_entirely_available (v)) {
+        CAMLreturn (Val_long (0));
+      }
+
+      CORE_ADDR addr = (uint64_t) value_as_address (v);
       v_result = caml_alloc (1, 0);
       Store_field (v_result, 0, caml_copy_nativeint ((intnat) addr));
       CAMLreturn (v_result);
@@ -1021,8 +1047,12 @@ monda_lookup_global_symbol (caml_value v_symbol_name)
   CAMLparam1 (v_symbol_name);
   CAMLlocal2 (v_symbol_and_block, v_result);
 
+  char* symbol_name = strdup (String_val (v_symbol_name));
+
   struct block_symbol block_and_sym =
-    lookup_global_symbol (String_val (v_symbol_name), NULL, VAR_DOMAIN);
+    lookup_global_symbol (symbol_name, NULL, VAR_DOMAIN);
+
+  free (symbol_name);
 
   if (block_and_sym.symbol == NULL) {
     CAMLreturn (Val_long (0));
@@ -1048,12 +1078,7 @@ monda_block_lookup_symbol (caml_value v_block,
   CAMLlocal1 (v_result);
 
   const struct block* block = (const struct block*) Nativeint_val (v_block);
-  char* symbol_name = String_val (v_symbol_name);
-
-  /* CR-someday mshinwell: If we generated [DW_TAG_imported_unit] then
-     it appears to be the case that searching a global block here would also
-     search symtabs' global blocks for compilation units on which the current
-     compilation unit depends.  This would avoid the special case. */
+  char* symbol_name = strdup (String_val (v_symbol_name));
 
   struct symbol* symbol;
   TRY {
@@ -1061,6 +1086,7 @@ monda_block_lookup_symbol (caml_value v_block,
       lookup_symbol_in_language (symbol_name, block,
                                  VAR_DOMAIN, language_ocaml,
                                  NULL);
+    free (symbol_name);
 
     if (block_and_sym.symbol == NULL) {
       CAMLreturn (Val_long (0));
@@ -1069,6 +1095,7 @@ monda_block_lookup_symbol (caml_value v_block,
     symbol = block_and_sym.symbol;
   }
   CATCH (except, RETURN_MASK_ERROR) {
+    free (symbol_name);
     CAMLreturn (Val_long (0));
   }
   END_CATCH

@@ -116,9 +116,9 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
   let evaluate_given_starting_point (type obj_or_addr) t ~path
         type_and_env ~(lvalue_or_rvalue : obj_or_addr lvalue_or_rvalue)
         ~must_be_mutable ~formatter ~(what_was_above : what_was_above)
-        v : obj_or_addr option =
+        ~starting_point : obj_or_addr option =
     let rec project_field_from_module env (ty : Cmt_file.core_or_module_type)
-          field_name v ~next : obj_or_addr option =
+          field_name v ~enclosing_scope ~next : obj_or_addr option =
       match ty with
       | Core _ ->
         (* CR mshinwell: Improve error messages *)
@@ -156,7 +156,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                   | Sig_value (ident, { val_type; val_kind; _ }) ->
                     if String.equal field_name (Ident.name ident) then
                       let ty : Cmt_file.core_or_module_type = Core val_type in
-                      pos (* doesn't matter *), Some (pos, ty)
+                      pos (* doesn't matter *), Some (pos, ty, enclosing_scope)
                     else
                       let pos =
                         match val_kind with
@@ -166,9 +166,16 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                       pos, None
                   | Sig_typext _ -> pos + 1, None
                   | Sig_module (ident, { md_type; _ }, _) ->
-                    if String.equal field_name (Ident.name ident) then
+                    let name = Ident.name ident in
+                    if String.equal field_name name then
                       let ty : Cmt_file.core_or_module_type = Module md_type in
-                      pos (* doesn't matter *), Some (pos, ty)
+                      let enclosing_scope =
+                        match enclosing_scope with
+                        | None -> Some name
+                        | Some enclosing_scope ->
+                          Some (enclosing_scope ^ "." ^ name)
+                      in
+                      pos (* doesn't matter *), Some (pos, ty, enclosing_scope)
                     else
                       pos + 1, None
                   | Sig_class _ -> pos + 1, None
@@ -180,12 +187,45 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           in
           begin match found_ty with
           | None ->
-            Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
-                project non-existent field @{<variable_name_colour>%s@} \
-                from module\n%!"
-              field_name;
-            None
-          | Some (pos, ty) ->
+            (* Searching via the module block has failed.  Try to locate a
+               static variable instead.  (This will typically correspond to
+               a field that is not exposed in the signature of the module
+               being projected from.) *)
+            if debug then begin
+              Format.eprintf "Enclosing scope is %S\n"
+                (match enclosing_scope with
+                 | None -> "<none>"
+                 | Some scope -> scope)
+            end;
+            let static_var_name =
+              match enclosing_scope with
+              | None -> field_name
+              | Some enclosing_scope -> enclosing_scope ^ "." ^ field_name
+            in
+            let block = D.Block.get_selected_block () in
+            let failure () =
+              Format.fprintf formatter "@{<error_colour>Error: @}Cannot \
+                  project non-existent field @{<variable_name_colour>%s@} \
+                  from module\n%!"
+                field_name;
+              None
+            in
+            begin match block with
+            | None -> failure ()
+            | Some block ->
+              match D.Block.lookup_symbol block static_var_name with
+              | None -> failure ()
+              | Some symbol ->
+                match D.Symbol.address symbol with
+                | None -> failure ()
+                | Some v ->
+                  find_component ~path:next ~enclosing_scope ~ty ~env
+                    ~previous_was_mutable:false
+                    ~address_of_v:None
+                    ~what_was_above:Module
+                    v
+            end
+          | Some (pos, ty, enclosing_scope) ->
             if debug then begin
               Format.eprintf "Need field %d\n%!" pos;
             end;
@@ -214,7 +254,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
               let address_of_v = Some (D.Obj.address_of_field v pos) in
               let v = D.Obj.field_exn v pos in
               (* CR mshinwell: Is this the correct [env]? *)
-              find_component ~path:next ~ty ~env
+              find_component ~path:next ~enclosing_scope ~ty ~env
                 ~previous_was_mutable:false
                 ~address_of_v
                 ~what_was_above:Module
@@ -223,7 +263,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
           end
         | Mty_functor _ -> cannot_handle "Mty_functor"
         | Mty_alias _ -> cannot_handle "Mty_alias"
-    and find_component ~path ~ty ~env ~previous_was_mutable
+    and find_component ~path ~enclosing_scope ~ty ~env ~previous_was_mutable
           ~(address_of_v : D.target_addr option)
           ~(what_was_above : what_was_above)
           (v : D.Obj.t) (* CR mshinwell: this should be a [Value.t] *)
@@ -249,12 +289,12 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
             project a module out of a core (non-module) value\n%!";
           None
         | Module ->
-          project_field_from_module env ty name v ~next
+          project_field_from_module env ty name v ~enclosing_scope ~next
         end
       | Project_name { field_name; next; } ->
         begin match what_was_above with
         | Module ->
-          project_field_from_module env ty field_name v ~next
+          project_field_from_module env ty field_name v ~enclosing_scope ~next
         | Core_value ->
           begin match oracle_result with
           | Record (_path, params, args, fields, _record_repr, env) ->
@@ -285,7 +325,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                   | Immutable -> false
                   | Mutable -> true
                 in
-                find_component ~path:next ~ty:(Cmt_file.Core field_type) ~env
+                find_component ~path:next ~enclosing_scope
+                  ~ty:(Cmt_file.Core field_type) ~env
                   ~previous_was_mutable:field_is_mutable
                   ~address_of_v:(Some address_of_field)
                   ~what_was_above:Core_value
@@ -311,7 +352,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
               let address_of_element = D.Obj.address_of_field v index in
               let element = D.Obj.field_exn v index in
               let element_type = element_types.(index) in
-              find_component ~path:next ~ty:(Cmt_file.Core element_type) ~env
+              find_component ~path:next ~enclosing_scope
+                ~ty:(Cmt_file.Core element_type) ~env
                 ~previous_was_mutable:false
                 ~address_of_v:(Some address_of_element)
                 ~what_was_above:Core_value
@@ -324,7 +366,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
             else
               let address_of_element = D.Obj.address_of_field v index in
               let element = D.Obj.field_exn v index in
-              find_component ~path:next ~ty:(Cmt_file.Core element_type) ~env
+              find_component ~path:next ~enclosing_scope
+                ~ty:(Cmt_file.Core element_type) ~env
                 ~previous_was_mutable:false
                 ~address_of_v:(Some address_of_element)
                 ~what_was_above:Core_value
@@ -342,7 +385,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
             else if index = 0 then
               let address_of_element = D.Obj.address_of_field v 0 in
               let element = D.Obj.field_exn v 0 in
-              find_component ~path:next ~ty:(Cmt_file.Core element_type)
+              find_component ~path:next ~enclosing_scope
+                ~ty:(Cmt_file.Core element_type)
                 ~env ~previous_was_mutable:false
                 ~address_of_v:(Some address_of_element)
                 ~what_was_above:Core_value
@@ -351,7 +395,7 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
               let address_of_tail = D.Obj.address_of_field v 1 in
               let tail = D.Obj.field_exn v 1 in
               let path = Project_index { index = index - 1; next; } in
-              find_component ~path ~ty ~env
+              find_component ~path ~enclosing_scope ~ty ~env
                 ~previous_was_mutable:false
                 ~address_of_v:(Some address_of_tail)
                 ~what_was_above:Core_value
@@ -383,7 +427,8 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                   let address_of_element = D.Obj.address_of_field v index in
                   let element = D.Obj.field_exn v index in
                   let element_type = ctor_arg_types.(index) in
-                  find_component ~path:next ~ty:(Cmt_file.Core element_type)
+                  find_component ~path:next ~enclosing_scope
+                    ~ty:(Cmt_file.Core element_type)
                     ~env ~previous_was_mutable:false
                     ~address_of_v:(Some address_of_element)
                     ~what_was_above:Core_value
@@ -395,8 +440,9 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
     match type_and_env with
     | None -> None
     | Some (ty, env, _is_parameter) ->
-      find_component ~path ~ty ~previous_was_mutable:false
-        ~address_of_v:None ~env ~what_was_above v
+      find_component ~path ~enclosing_scope:None
+        ~ty ~previous_was_mutable:false ~env ~what_was_above
+        ~address_of_v:None starting_point
 
   (* CR mshinwell: Remove search path arg *)
   let evaluate t ~path ~lvalue_or_rvalue ~must_be_mutable
@@ -442,11 +488,13 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
         | Module { next; _ }
         | Variable { next; _ } -> next
       in
-      if debug then Printf.printf "calling Symbol.value\n%!";
+      if debug then Printf.printf "calling Symbol.address\n%!";
       match D.Symbol.address symbol with
-      | None -> None
+      | None ->
+        if debug then Printf.printf "couldn't find address of symbol\n%!";
+        None
       | Some starting_point ->
         evaluate_given_starting_point t ~path
           type_and_env ~lvalue_or_rvalue ~must_be_mutable
-          ~formatter ~what_was_above starting_point
+          ~formatter ~what_was_above ~starting_point
 end
