@@ -219,7 +219,13 @@ struct
       | Stdlib_hashtbl { key_env; key_ty; datum_env; datum_ty; } ->
         print_stdlib_hashtbl t state ~key_env ~key_ty ~datum_env ~datum_ty v
       | Custom -> print_custom_block t ~state v
-      | Module mod_ty -> print_module t state mod_ty v
+      | Module mod_ty ->
+        let env =
+          match env with
+          | None -> Env.empty
+          | Some env -> env
+        in
+        print_module t state env mod_ty v
       | Unknown -> Format.fprintf formatter "unknown"
     end;
     if state.print_sig then begin
@@ -1150,7 +1156,7 @@ struct
       end
     end
 
-  and print_module t state (mod_ty : Types.module_type) v =
+  and print_module t state env (mod_ty : Types.module_type) v =
     let formatter = state.formatter in
     let sg =
       match mod_ty with
@@ -1171,9 +1177,22 @@ struct
         Format.fprintf formatter "@[<v 2>  "
       end;
       Format.fprintf formatter "@[<hv 2>struct@ ";
-      let (_pos : int option), (_first : bool) =
-        List.fold_left sg ~init:(Some 0, true)
-          ~f:(fun (pos, first) (sig_item : Types.signature_item) ->
+      (* CR mshinwell: Work out how to refactor [Printtyp] so we don't need
+         to expose so many functions there. *)
+      let rec print_sig_items ~pos ~first ~in_type_group env
+            (sig_items : Types.signature_item list) =
+        match sig_items with
+        | [] -> ()
+        | (sig_item::sig_items) as sig_items' ->
+          let in_type_group =
+            Printtyp.still_in_type_group env in_type_group sig_item
+          in
+          let sg, sig_items = Printtyp.filter_rem_sig sig_item sig_items in
+          Printtyp.hide_rec_items sig_items';
+          Printtyp.protect_rec_items sig_items';
+          Printtyp.reset_naming_context ();
+          let env = Env.add_signature (sig_item :: sg) env in
+          let pos, first =
             match pos with
             | None -> None, first
             | Some pos ->
@@ -1195,6 +1214,21 @@ struct
                     (Ident.name ident)
                     print_type ()
                 in
+                (* CR mshinwell: improve this (maybe add address printing as
+                   an option to the normal boxed value printer?) *)
+                let print_field_raw () =
+                  try
+                    match V.field_exn v pos with
+                    | None ->
+                      Format.fprintf formatter "%s" optimized_out
+                    | Some v ->
+                      Format.fprintf formatter "%a" V.print v
+                  with D.Read_error ->
+                    Format.fprintf formatter
+                      "@{<error_colour><could not read field %d \
+                        of module block>}"
+                      pos
+                in
                 let print_field ty =
                   try
                     match V.field_exn v pos with
@@ -1203,8 +1237,9 @@ struct
                     | Some v ->
                       let state = descend state ~current_operator:Separator in
                       let type_of_ident =
-                        (* CR mshinwell: Which environment to use? *)
-                        Some (ty, Env.empty, Is_parameter.local)
+                        match ty with
+                        | None -> None
+                        | Some ty -> Some (ty, env, Is_parameter.local)
                       in
                       print_value t ~state ~type_of_ident v
                   with D.Read_error ->
@@ -1217,22 +1252,27 @@ struct
                   match sig_item with
                   | Sig_value (ident, { val_type; val_kind; _ }) ->
                     print_ident ~print_type:(fun formatter () ->
-                      Format.fprintf formatter "@ : @{<type_colour>%a@}"
-                        Printtyp.type_expr val_type)
+                        Format.fprintf formatter "@ : @{<type_colour>%a@}"
+                        Printtyp.type_scheme val_type)
                       "let" ident;
                     let ty : Cmt_file.core_or_module_type = Core val_type in
-                    print_field ty;
+                    print_field (Some ty);
                     begin match val_kind with
                     | Val_prim _ -> pos
                     | _ -> pos + 1
                     end
-                  | Sig_typext (ident, _, _) ->
-                    print_ident "<Sig_typext>" ident;
-                    pos + 1  (* CR mshinwell: should print these *)
+                  | Sig_typext (ident, ctor_decl, _) ->
+                    Format.fprintf formatter
+                      "@[<hov 2>@{<type_colour>%a@} = "
+                      (Printtyp.extension_constructor ident) ctor_decl;
+                    print_field_raw ();
+                    Format.fprintf formatter " =@ ";
+                    print_field None;
+                    pos + 1
                   | Sig_module (ident, { md_type; _ }, _) ->
                     print_ident "module" ident;
                     let ty : Cmt_file.core_or_module_type = Module md_type in
-                    print_field ty;
+                    print_field (Some ty);
                     pos + 1
                   | Sig_class (ident, _, _) ->
                     print_ident "class" ident;
@@ -1255,8 +1295,14 @@ struct
                 in
                 Format.fprintf formatter "@]";
                 Some next_pos, false
-              end)
+              end
+          in
+          print_sig_items ~pos ~first ~in_type_group env sig_items
       in
+      Printtyp.wrap_env (fun env -> env) (fun sg ->
+          print_sig_items ~pos:(Some 0) ~first:true ~in_type_group:false
+            env sg)
+        sg;
       Format.fprintf formatter "@]@ end";
       if state.depth = 0 && actual_module_block_size > 1 then begin
         Format.fprintf formatter "@]"
@@ -1409,25 +1455,31 @@ struct
           visited = V.Set.empty;
         }
         in
-        if only_print_short_type then begin
-          let type_of_ident =
-            match type_of_ident with
-            | None -> None
-            | Some (ty, env, _) -> Some (ty, env)
-          in
-          print_short_type t ~state ~type_of_ident scrutinee
-        end else if only_print_short_value then begin
-          let type_of_ident =
-            match type_of_ident with
-            | None -> None
-            | Some (ty, env, _) -> Some (ty, env)
-          in
-          print_short_value t ~state ~type_of_ident scrutinee
-        end else begin
-          Format.fprintf formatter "@[<hov 2>";
-          print_value t ~state ~type_of_ident scrutinee;
-          Format.fprintf formatter "@]"
-        end;
+        let env =
+          match type_of_ident with
+          | None -> Env.empty
+          | Some (_, env, _) -> env
+        in
+        Printtyp.wrap_printing_env ~error:false env (fun () ->
+          if only_print_short_type then begin
+            let type_of_ident =
+              match type_of_ident with
+              | None -> None
+              | Some (ty, env, _) -> Some (ty, env)
+            in
+            print_short_type t ~state ~type_of_ident scrutinee
+          end else if only_print_short_value then begin
+            let type_of_ident =
+              match type_of_ident with
+              | None -> None
+              | Some (ty, env, _) -> Some (ty, env)
+            in
+            print_short_value t ~state ~type_of_ident scrutinee
+          end else begin
+            Format.fprintf formatter "@[<hov 2>";
+            print_value t ~state ~type_of_ident scrutinee;
+            Format.fprintf formatter "@]"
+          end);
         Format.pp_print_flush formatter ()
       end)
 end

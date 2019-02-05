@@ -481,8 +481,7 @@ let add_information_from_cmi_file t ~unit_name =
     let sig_items = cmi.cmi_sign in
     let idents_to_types =
       String.Map.add (Printf.sprintf "%s_0" unit_name)
-        (Module (Mty_signature sig_items),
-         Env.empty) (* CR mshinwell: what env should go here, if any? *)
+        (Module (Mty_signature sig_items), Env.empty)
         t.idents_to_types
     in
     let idents_to_types = traverse_signature sig_items ~idents_to_types in

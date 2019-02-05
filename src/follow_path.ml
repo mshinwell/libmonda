@@ -210,20 +210,41 @@ module Make (D : Debugger.S) (Cmt_cache : Cmt_cache_intf.S) = struct
                 field_name;
               None
             in
+            if debug then begin
+              Format.eprintf "Examining selected block\n%!"
+            end;
             begin match block with
             | None -> failure ()
             | Some block ->
+              if debug then begin
+                Format.eprintf "Looking up static var %S\n%!" static_var_name
+              end;
               match D.Block.lookup_symbol block static_var_name with
               | None -> failure ()
               | Some symbol ->
                 match D.Symbol.address symbol with
-                | None -> failure ()
+                | None ->
+                  if debug then begin
+                    Format.eprintf "Couldn't find address of symbol\n%!"
+                  end;
+                  failure ()
                 | Some v ->
-                  find_component ~path:next ~enclosing_scope ~ty ~env
-                    ~previous_was_mutable:false
-                    ~address_of_v:None
-                    ~what_was_above:Module
-                    v
+                  match D.Symbol.dwarf_type symbol with
+                  | None -> failure ()
+                  | Some dwarf_type ->
+                    let frame = D.Frame.get_selected_frame () in
+                    let type_and_env =
+                      Type_helper.type_and_env_from_dwarf_type ~dwarf_type
+                        ~cmt_cache:t.cmt_cache frame
+                    in
+                    match type_and_env with
+                    | None -> failure ()
+                    | Some (ty, env, _is_param) ->
+                      find_component ~path:next ~enclosing_scope ~ty ~env
+                        ~previous_was_mutable:false
+                        ~address_of_v:None
+                        ~what_was_above:Module
+                        v
             end
           | Some (pos, ty, enclosing_scope) ->
             if debug then begin

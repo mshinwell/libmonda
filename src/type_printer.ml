@@ -79,15 +79,14 @@ struct
       | Tarrow _ | Ttuple _ | Tconstr _ | Tobject _ | Tfield _ | Tvariant _
       | Tpoly _ | Tpackage _ -> print ()
       end
-    | Some (Module modtype, env, _is_parameter) ->
+    | Some (Module modtype, _, _is_parameter) ->
       begin match variable_name with
       | None -> ()
       | Some name ->
         Format.fprintf formatter "@{<module_name_colour>%s@}" name
       end;
       Format.fprintf formatter "@ : @{<type_colour>";
-      Printtyp.wrap_printing_env ~error:false env (fun () ->
-        Printtyp.modtype formatter modtype);
+      Printtyp.modtype formatter modtype;
       Format.fprintf formatter "@}";
       true
 
@@ -101,6 +100,12 @@ struct
         Type_helper.type_and_env_from_dwarf_type ~dwarf_type
           ~cmt_cache:t.cmt_cache D.Frame.none
     in
-    print_given_type_and_env ?variable_name ~always_print:() formatter
-      type_and_env
+    let env =
+      match type_and_env with
+      | None -> Env.empty
+      | Some (_, env, _) -> env
+    in
+    Printtyp.wrap_printing_env ~error:false env (fun () ->
+      print_given_type_and_env ?variable_name ~always_print:() formatter
+        type_and_env)
 end
